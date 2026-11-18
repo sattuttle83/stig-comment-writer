@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STIG Comment Writer</title>
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#fff; --ink:#1d2330; --muted:#5d6678; --line:#d9dde5;
+  --accent:#1f5fa8; --accent-ink:#fff; --soft:#eef3fa;
+  --open:#b42318; --open-bg:#fdecea; --naf:#18794e; --naf-bg:#e7f6ee;
+  --na:#5d6678; --na-bg:#eceef2; --nr:#9a6700; --nr-bg:#fff6dc;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#14171d; --panel:#1c2028; --ink:#e6e9ef; --muted:#9aa3b5; --line:#303644;
+    --accent:#5b9be6; --accent-ink:#0d1117; --soft:#1f2a3a;
+    --open:#ff8a80; --open-bg:#3a1d1d; --naf:#6fd3a0; --naf-bg:#16302a;
+    --na:#b4bccb; --na-bg:#2a2f3a; --nr:#f0c560; --nr-bg:#3a3020; }
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:16px;margin:0 12px 0 0;font-weight:650}
+header .file{color:var(--muted);font-size:13px;margin-left:auto}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px;border-radius:6px;cursor:pointer}
+button:hover,.btn:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:not-allowed}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+textarea{resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+main{display:grid;grid-template-columns:330px 1fr;height:calc(100vh - 53px)}
+#side{border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+#side .filters{padding:10px;display:grid;gap:6px;border-bottom:1px solid var(--line)}
+#side .counts{font-size:12px;color:var(--muted)}
+#list{overflow:auto;flex:1}
+.item{padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer}
+.item:hover{background:var(--soft)}
+.item.sel{background:var(--soft);box-shadow:inset 3px 0 0 var(--accent)}
+.item .top{display:flex;gap:6px;align-items:center;font-size:12px}
+.item .t{font-size:13px;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pill{font-size:11px;padding:1px 7px;border-radius:10px;font-weight:600;white-space:nowrap}
+.s-Open{color:var(--open);background:var(--open-bg)}
+.s-NotAFinding{color:var(--naf);background:var(--naf-bg)}
+.s-Not_Applicable{color:var(--na);background:var(--na-bg)}
+.s-Not_Reviewed{color:var(--nr);background:var(--nr-bg)}
+.cat{font-size:11px;color:var(--muted);font-weight:600}
+.edited{font-size:11px;color:var(--accent)}
+#detail{overflow:auto;padding:16px 20px 60px}
+.empty{max-width:640px;margin:60px auto;color:var(--muted)}
+.empty h2{color:var(--ink)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+.card h3{margin:0 0 10px;font-size:14px;display:flex;align-items:center;gap:8px}
+.card h3 .sp{flex:1}
+.rulehead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.rulehead b{color:var(--ink)}
+.rtitle{font-size:16px;font-weight:600;margin:6px 0 0}
+details{margin-top:8px}
+summary{cursor:pointer;color:var(--accent);font-size:13px}
+pre{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;margin:6px 0 0;max-height:320px;overflow:auto}
+.ev{font-family:var(--mono);font-size:12.5px;min-height:130px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.verdict{display:flex;align-items:center;gap:10px;margin:4px 0 8px;font-size:14px}
+.verdict .big{font-size:15px;font-weight:650}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:6px}
+th,td{border:1px solid var(--line);padding:5px 7px;text-align:left;vertical-align:top}
+th{background:var(--bg);font-weight:600}
+td.pass{color:var(--naf);font-weight:600}
+td.fail{color:var(--open);font-weight:600}
+ul.reasons{margin:6px 0 0;padding-left:18px;font-size:13px}
+ul.reasons li{margin:2px 0}
+.cond{font-size:12.5px;color:var(--muted)}
+.fields{display:grid;gap:10px}
+.fld label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:3px}
+.fld label .ctx{font-weight:400}
+.fld.auto input,.fld.auto textarea{border-left:3px solid var(--accent)}
+.out{font-family:var(--mono);font-size:12.5px;min-height:240px}
+.warn{color:var(--nr);font-size:12.5px}
+.ok{color:var(--naf);font-size:12.5px}
+.muted{color:var(--muted);font-size:12.5px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:1100px){.grid2{grid-template-columns:1fr}}
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:18px;width:min(760px,94vw)}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+dialog h2{margin:0 0 12px;font-size:16px}
+dialog .g{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+dialog .g .full{grid-column:1/-1}
+dialog label{font-size:12px;font-weight:600;color:var(--muted)}
+.dlgbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-radius:3px;padding:0 4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>STIG Comment Writer</h1>
+  <button id="btnOpen">Open checklist (.ckl / .cklb)</button><input type="file" id="fileIn" accept=".ckl,.cklb,.json,.xml" hidden>
+  <button id="btnManual">Paste a single rule</button>
+  <button id="btnExport" class="primary" disabled>Save checklist</button>
+  <button id="btnProfile">My info</button>
+  <button id="btnTemplates">Templates</button>
+  <span class="file"><span id="fileLabel">No checklist loaded</span> <span id="saveState" class="muted"></span></span>
+</header>
+<main>
+  <aside id="side">
+    <div class="filters">
+      <input id="q" placeholder="Search Vuln ID, rule, title…">
+      <div class="row" style="margin:0">
+        <select id="fStatus" style="flex:1">
+          <option value="">All statuses</option>
+          <option value="Not_Reviewed">Not Reviewed</option>
+          <option value="Open">Open</option>
+          <option value="NotAFinding">Not a Finding</option>
+          <option value="Not_Applicable">Not Applicable</option>
+        </select>
+        <select id="fCat" style="flex:1">
+          <option value="">All CATs</option>
+          <option value="high">CAT I</option>
+          <option value="medium">CAT II</option>
+          <option value="low">CAT III</option>
+        </select>
+      </div>
+      <div class="counts" id="counts"></div>
+    </div>
+    <div id="list"></div>
+  </aside>
+  <section id="detail">
+    <div class="empty">
+      <h2>Open a checklist to start</h2>
+      <p>Load a <b>.ckl</b> (STIG Viewer 2) or <b>.cklb</b> (STIG Viewer 3 / STIG Manager export). Pick a rule, paste your command output, and press <b>Evaluate</b>. The app checks the output against the rule's check text, suggests a status, and fills in your comment template.</p>
+      <p>No checklist handy? Use <b>Paste a single rule</b>.</p>
+      <p>Set <b>My info</b> once (name, role, team, ISSO). It's saved in this browser and fills the Who and Last Updated lines.</p>
+      <p class="muted">Runs fully offline. Nothing leaves this page.</p>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlgProfile">
+  <h2>My info</h2>
+  <div class="g">
+    <div><label>Your name</label><input id="pName"></div>
+    <div><label>Your role</label><input id="pRole" placeholder="IT Systems Engineer"></div>
+    <div><label>Team</label><input id="pTeam" placeholder="SIL Systems Team"></div>
+    <div><label>ISSE / ISSO name</label><input id="pIsso"></div>
+    <div><label>Approval authority (AO / ISSM)</label><input id="pAo"></div>
+    <div><label>Environment label</label><input id="pEnv" placeholder="SIL"></div>
+    <div><label>Production environment/system</label><input id="pProd" placeholder="production enclave"></div>
+    <div><label>Date format</label>
+      <select id="pFmt"><option>YYYY-MM-DD</option><option>DD MMM YYYY</option><option>MM/DD/YYYY</option></select></div>
+    <div class="full"><label>Default evidence location</label><input id="pEvLoc" placeholder="Checklist Finding Details; output archived on \\share\stig-evidence"></div>
+  </div>
+  <div class="dlgbtns"><button id="pCancel">Cancel</button><button class="primary" id="pSave">Save</button></div>
+</dialog>
+
+<dialog id="dlgTemplates">
+  <h2>Comment templates</h2>
+  <p class="muted" style="margin-top:0">Same format as your template file: a title line, a blank line, then the template lines. Put a blank line between templates. Anything in [brackets] becomes a fill-in field. The Status line decides the checklist status (Open, Not a Finding, Not Applicable).</p>
+  <textarea id="tplText" style="height:52vh;font-family:var(--mono);font-size:12.5px"></textarea>
+  <div class="dlgbtns">
+    <label class="btn" style="margin-right:auto">Import .txt<input type="file" id="tplFile" accept=".txt" hidden></label>
+    <button id="tplReset">Reset to defaults</button>
+    <button id="tplCancel">Cancel</button>
+    <button class="primary" id="tplSave">Save</button>
+  </div>
+</dialog>
+
+<dialog id="dlgManual">
+  <h2>Paste a single rule</h2>
+  <div class="g">
+    <div><label>Vuln ID</label><input id="mVid" placeholder="V-243469"></div>
+    <div><label>Severity</label><select id="mSev"><option value="high">CAT I</option><option value="medium" selected>CAT II</option><option value="low">CAT III</option></select></div>
+    <div class="full"><label>Rule title</label><input id="mTitle"></div>
+    <div><label>Host name</label><input id="mHost"></div>
+    <div><label>Rule ID (optional)</label><input id="mRid"></div>
+    <div class="full"><label>Check text</label><textarea id="mCheck" rows="6"></textarea></div>
+    <div class="full"><label>Fix text</label><textarea id="mFix" rows="4"></textarea></div>
+  </div>
+  <div class="dlgbtns"><button id="mCancel">Cancel</button><button class="primary" id="mAdd">Add rule</button></div>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ---------------- Default templates (user's file + one added) ---------------- */
+const DEFAULT_TEMPLATES = `Open finding (remediation deferred)
+
+Status: Open - remediation deferred pending [SIL testing / approval / dependency / maintenance window / vendor patch].
+POA&M: [POA&M ID or N/A]
+Who: [Team] (POC: [Name, role])
+What: [Specific remediation: setting/value, patch/version, or configuration change]
+Why: [Why it cannot be closed now and the operational impact if applied untested]
+Mitigation: [Interim controls reducing risk now, or "None in place"]
+Where: [SIL, then production environment/system]
+When: Test: [date]. Planned implementation: [date or "to be set after SIL testing"].
+How: [Planned testing, implementation, and validation steps, including who validates]
+Next Action: [Next step] by [date].
+Last Updated: [date] by [name]
+
+Remediated (closing the finding)
+
+Status: Not a Finding - remediated [date].
+POA&M: [POA&M ID closed, or N/A]
+Who: [Team] (Implemented by: [Name, role]; Validated by: [Name, role])
+What: [Exact change made: setting/value, patch/version, policy]
+Previous State: [What was non-compliant before the change]
+Where: [Hostnames/systems, environment]
+When: Implemented [date]; validated [date].
+How: [How it was applied and how compliance was verified: manual check, SCC/ACAS scan, command output]
+Change Record: [CR/CCB/ticket number; TPP if applicable]
+Evidence: [Scan results, screenshots, or output, and where they are stored]
+Last Updated: [date] by [name]
+
+Not Applicable
+
+Status: Not Applicable.
+Who: [Team] (POC: [Name, role]; Reviewed by: [ISSE/ISSO name])
+Why: [Why the requirement does not apply, e.g., service/feature/role not installed or not used]
+Verification: [How this was confirmed: command output, configuration review, scan]
+Evidence: [Location of supporting evidence]
+Last Updated: [date] by [name]
+
+Risk acceptance / exception requested
+
+Status: Open - risk acceptance requested.
+POA&M: [POA&M ID]
+Who: [Team] (POC: [Name, role]); Approval authority: [AO/ISSM]
+What: [Requirement that cannot be met]
+Why: [Technical or mission reason it cannot be implemented]
+Mitigation: [Compensating controls in place]
+Residual Risk: [Low / Moderate / High, with brief justification]
+When: Request submitted [date]; decision expected by [date].
+Next Action: [Next step] by [date].
+Last Updated: [date] by [name]
+
+Not a Finding (compliant at review)
+
+Status: Not a Finding - compliant at review [date].
+Who: [Team] (Reviewed by: [Name, role])
+What: [Setting/value verified]
+Where: [Hostnames/systems, environment]
+How: [How compliance was verified: manual check, SCC/ACAS scan, command output]
+Evidence: [Scan results, screenshots, or output, and where they are stored]
+Last Updated: [date] by [name]`;
+
+/* ---------------- Storage (guarded) ---------------- */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v==null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+
+/* ---------------- State ---------------- */
+const S = {
+  ck: null,            // {type, fileName, doc|json, host, vulns:[]}
+  sel: null,           // vuln key
+  work: {},            // per vuln: {tpl, vals:{key:{v,auto}}, evidence, evalRes, outManual, outText, putDetails}
+  profile: store.get('scw.profile', {name:'',role:'',team:'',isso:'',ao:'',env:'SIL',prod:'',fmt:'YYYY-MM-DD',evloc:''}),
+  tplText: store.get('scw.templates', DEFAULT_TEMPLATES),
+  templates: [],
+  dirty: false,
+  handle: null,        // File System Access handle → auto-save back to the same file
+  saveChain: Promise.resolve(),
+  draftTimer: null
+};
+S.templates = parseTemplates(S.tplText);
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); }
+
+const STATUS_LABEL = {Open:'Open', NotAFinding:'Not a Finding', Not_Applicable:'Not Applicable', Not_Reviewed:'Not Reviewed'};
+const CAT = {high:'CAT I', medium:'CAT II', low:'CAT III'};
+
+function fmtDate(d=new Date()){
+  const p=n=>String(n).padStart(2,'0'), M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  switch(S.profile.fmt){
+    case 'DD MMM YYYY': return `${p(d.getDate())} ${M[d.getMonth()]} ${d.getFullYear()}`;
+    case 'MM/DD/YYYY': return `${p(d.getMonth()+1)}/${p(d.getDate())}/${d.getFullYear()}`;
+    default: return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  }
+}
+
+/* ---------------- Templates ---------------- */
+function parseTemplates(text){
+  const lines = text.replace(/\r/g,'').split('\n');
+  const chunks=[]; let cur=[];
+  for(const l of lines){ if(l.trim()===''){ if(cur.length){chunks.push(cur);cur=[];} } else cur.push(l); }
+  if(cur.length) chunks.push(cur);
+  const out=[]; let title=null;
+  for(const c of chunks){
+    if(c.length===1 && !/^[A-Za-z&\/ ]{2,30}:\s/.test(c[0])){ title=c[0].trim(); continue; }
+    const body=c.join('\n');
+    out.push({name: title || `Template ${out.length+1}`, body, status: statusFromBody(body)});
+    title=null;
+  }
+  return out;
+}
+function statusFromBody(body){
+  const m = body.match(/^Status:\s*(.*)$/mi); const s = m ? m[1].toLowerCase() : '';
+  if(s.includes('not a finding')) return 'NotAFinding';
+  if(s.includes('not applicable')) return 'Not_Applicable';
+  if(s.includes('not reviewed')) return 'Not_Reviewed';
+  if(s.includes('open')) return 'Open';
+  return 'Open';
+}
+// Turn a template into a list of fields (one per [token])
+function templateFields(tpl){
+  const fields=[];
+  tpl.body.split('\n').forEach((line, li)=>{
+    const lm = line.match(/^([^:\[]+):/); const label = lm ? lm[1].trim() : '';
+    const re=/\[([^\]]+)\]/g; let m, ti=0, last=0;
+    while((m=re.exec(line))){
+      const before = line.slice(last, m.index).replace(/^[^:]*:\s*/,'').trim();
+      fields.push({key:`${li}:${ti}`, line:li, label, token:m[1], before, lineText:line});
+      ti++; last = m.index + m[0].length;
+    }
+  });
+  return fields;
+}
+function renderComment(tpl, vals){
+  return tpl.body.split('\n').map((line, li)=>{
+    let ti=0;
+    return line.replace(/\[([^\]]+)\]/g, (all)=>{
+      const v = vals[`${li}:${ti++}`]; return (v && v.v && v.v.trim()) ? v.v.trim() : all;
+    });
+  }).join('\n');
+}
+const LONG_LABELS = /^(what|why|how|mitigation|evidence|verification|previous state|residual risk)$/i;
+
+/* ---------------- Checklist parsing ---------------- */
+function normStatus(s){
+  s = String(s||'').toLowerCase().replace(/[\s_]/g,'');
+  if(s==='notafinding'||s==='pass') return 'NotAFinding';
+  if(s==='open'||s==='fail') return 'Open';
+  if(s==='notapplicable'||s==='na') return 'Not_Applicable';
+  return 'Not_Reviewed';
+}
+const CKLB_STATUS = {NotAFinding:'not_a_finding', Open:'open', Not_Applicable:'not_applicable', Not_Reviewed:'not_reviewed'};
+
+function parseCkl(text, fileName){
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if(doc.querySelector('parsererror')) throw new Error('This .ckl is not valid XML.');
+  const host = (doc.querySelector('ASSET > HOST_NAME')||{}).textContent || '';
+  const vulns=[];
+  doc.querySelectorAll('iSTIG').forEach((ist, si)=>{
+    let stig='';
+    ist.querySelectorAll('STIG_INFO > SI_DATA').forEach(sd=>{
+      const n=sd.querySelector('SID_NAME'), d=sd.querySelector('SID_DATA');
+      if(n && n.textContent==='title' && d) stig=d.textContent;
+    });
+    ist.querySelectorAll('VULN').forEach(v=>{
+      const a={};
+      v.querySelectorAll('STIG_DATA').forEach(sd=>{
+        const k=sd.querySelector('VULN_ATTRIBUTE'), d=sd.querySelector('ATTRIBUTE_DATA');
+        if(k && d && !(k.textContent in a)) a[k.textContent]=d.textContent;
+      });
+      const kid = el => (v.querySelector(':scope > '+el)||{}).textContent || '';
+      vulns.push({
+        key:`${si}|${a.Vuln_Num}|${a.Rule_ID}`, vulnId:a.Vuln_Num||'', ruleId:a.Rule_ID||'', ruleVer:a.Rule_Ver||'',
+        title:a.Rule_Title||'', severity:(a.Severity||'').toLowerCase(), check:a.Check_Content||'', fix:a.Fix_Text||'',
+        status:normStatus(kid('STATUS')), comments:kid('COMMENTS'), details:kid('FINDING_DETAILS'), stig, ref:v, edited:false
+      });
+    });
+  });
+  if(!vulns.length) throw new Error('No rules (VULN entries) found in this .ckl.');
+  return {type:'ckl', fileName, doc, host, vulns};
+}
+function parseCklb(text, fileName){
+  let j; try{ j=JSON.parse(text); }catch(e){ throw new Error('This .cklb is not valid JSON.'); }
+  const host = (j.target_data && j.target_data.host_name) || '';
+  const vulns=[];
+  (j.stigs||[]).forEach((st, si)=>{
+    (st.rules||[]).forEach(r=>{
+      vulns.push({
+        key:`${si}|${r.group_id}|${r.rule_id}`, vulnId:r.group_id||'', ruleId:r.rule_id_src||r.rule_id||'', ruleVer:r.rule_version||'',
+        title:r.rule_title||'', severity:(r.severity||'').toLowerCase(), check:r.check_content||'', fix:r.fix_text||'',
+        status:normStatus(r.status), comments:r.comments||'', details:r.finding_details||'',
+        stig:st.display_name||st.stig_name||'', ref:r, edited:false
+      });
+    });
+  });
+  if(!vulns.length) throw new Error('No rules found in this .cklb.');
+  return {type:'cklb', fileName, json:j, host, vulns};
+}
+
+function writeBack(v, status, comment, details){
+  v.status=status; v.comments=comment; if(details!=null) v.details=details; v.edited=true;
+  if(S.ck.type==='ckl'){
+    const d=S.ck.doc, el=v.ref;
+    const setKid=(name,val)=>{ let n=el.querySelector(':scope > '+name); if(!n){ n=d.createElement(name); el.appendChild(n);} n.textContent=val; };
+    setKid('STATUS', status); setKid('COMMENTS', comment); if(details!=null) setKid('FINDING_DETAILS', details);
+  } else if(S.ck.type==='cklb'){
+    v.ref.status=CKLB_STATUS[status]; v.ref.comments=comment; if(details!=null) v.ref.finding_details=details;
+  }
+  S.dirty = S.ck.type!=='manual';
+  $('btnExport').disabled = S.ck.type==='manual';
+  if(S.handle) saveToFile(); else setSaveState();
+}
+function serializeChecklist(){
+  const ck=S.ck;
+  if(ck.type==='ckl'){
+    let xml = new XMLSerializer().serializeToString(ck.doc);
+    if(!/^<\?xml/.test(xml)) xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml;
+    return xml;
+  }
+  if(ck.type==='cklb') return JSON.stringify(ck.json, null, 2);
+  return null;
+}
+// Write straight back to the opened file (Edge / Chrome). Saves run one at a time.
+function saveToFile(){
+  const text = serializeChecklist(); if(text==null || !S.handle) return;
+  setSaveState('Saving…');
+  S.saveChain = S.saveChain.then(async ()=>{
+    try{
+      const w = await S.handle.createWritable();
+      await w.write(text); await w.close();
+      S.dirty=false;
+      setSaveState('Auto-saved ' + new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}));
+    }catch(err){
+      setSaveState('<span class="warn">Auto-save failed. Click Save checklist.</span>');
+      console.error(err);
+    }
+  });
+}
+function setSaveState(msg){
+  const el=$('saveState'); if(!S.ck || S.ck.type==='manual'){ el.innerHTML=''; return; }
+  if(msg){ el.innerHTML='· '+msg; return; }
+  el.innerHTML = S.handle ? '· Auto-save on'
+    : (S.dirty ? '· <span class="warn">Not saved. Click Save checklist.</span>' : '· Auto-save off (this browser can\'t write to the file)');
+}
+function exportChecklist(){
+  const ck=S.ck;
+  if(S.handle){ saveToFile(); toast('Saved to '+ck.fileName); return; }
+  const text = serializeChecklist(); if(text==null) return;
+  const blob = new Blob([text], {type: ck.type==='ckl' ? 'application/xml' : 'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=ck.fileName; document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();}, 500);
+  S.dirty=false; setSaveState(); toast('Checklist saved to your downloads');
+}
+
+/* ---------------- Evaluation engine ---------------- */
+function parseExpected(raw){
+  const r = raw.trim();
+  let nums = [...r.matchAll(/\((\d+)\)/g)].map(m=>Number(m[1]));
+  if(!nums.length) nums = [...r.matchAll(/0x[0-9a-f]+/gi)].map(m=>parseInt(m[0],16));
+  if(!nums.length) nums = [...r.matchAll(/(?<![\w.])\d+(?![\w.])/g)].map(m=>Number(m[0]));
+  let op='in';
+  if(/or (greater|higher|more)/i.test(r)) op='>=';
+  else if(/or (less|lower|fewer)/i.test(r)) op='<=';
+  const notZero = /but not 0|excluding 0|not 0x0+\b/i.test(r);
+  if(!nums.length) return {kind:'str', vals:[r.replace(/^["']|["']$/g,'')], op:'in', raw:r, txt:r};
+  const txt = op==='>=' ? `${nums[0]} or greater` : op==='<=' ? `${nums[0]} or less${notZero?', not 0':''}` : nums.join(' or ');
+  return {kind:'num', vals:nums, op, notZero, raw:r, txt};
+}
+function parseObserved(s){
+  s = s.trim().replace(/[,;]$/,'');
+  if(/^0x[0-9a-f]+$/i.test(s)) return parseInt(s,16);
+  if(/^-?\d+$/.test(s)) return Number(s);
+  return s.replace(/^["']|["']$/g,'');
+}
+function meets(exp, obs){
+  if(exp.kind==='num'){
+    if(typeof obs!=='number') return false;
+    if(exp.notZero && obs===0) return false;
+    if(exp.op==='>=') return obs >= exp.vals[0];
+    if(exp.op==='<=') return obs <= exp.vals[0] && (!exp.notZero || obs!==0);
+    return exp.vals.includes(obs);
+  }
+  return exp.vals.some(v => String(obs).toLowerCase() === String(v).toLowerCase());
+}
+function hiveShort(h){ return /LOCAL_MACHINE/i.test(h)?'HKLM':/CURRENT_USER/i.test(h)?'HKCU':h; }
+
+function registryChecks(check){
+  const items=[]; let hive='', path='', type='';
+  check.replace(/\r/g,'').split('\n').forEach(line=>{
+    const l=line.trim(); let m;
+    if((m=l.match(/^Registry Hive:\s*(.+)$/i))) hive=m[1].trim();
+    else if((m=l.match(/^Registry Path:\s*(.+)$/i))) path=m[1].trim().replace(/^\\+|\\+$/g,'');
+    else if((m=l.match(/^Value Name:\s*(.+)$/i))) items.push({hive, path, name:m[1].trim(), type:'', exp:null});
+    else if((m=l.match(/^(?:Value )?Type:\s*(REG_\w+)/i))){ type=m[1]; if(items.length) items[items.length-1].type=type; }
+    else if((m=l.match(/^Value:\s*(.+)$/i)) && items.length && !items[items.length-1].exp) items[items.length-1].exp=parseExpected(m[1]);
+  });
+  return items.filter(i=>i.exp);
+}
+function policyChecks(check){
+  const flat = check.replace(/\s+/g,' ');
+  const re = /If the value for (?:the )?["“]([^"”]+?)[,.]?["”] is (?:configured to |set to )?(less than|greater than|more than|fewer than|not set to|not configured to|not)\s+["“]?(\d+|[^"”,.]+?)["”]?(?=[\s,.])/gi;
+  const out=[]; let m;
+  while((m=re.exec(flat))){
+    const t = m[3].trim(); const op = m[2].toLowerCase();
+    out.push({label:m[1].trim(), op, target: /^\d+$/.test(t)?Number(t):t, sentence: m[0]});
+  }
+  return out;
+}
+function sentences(text, re){
+  return text.replace(/\s+/g,' ').split(/(?<=\.)\s+/).filter(s=>re.test(s)).map(s=>s.trim());
+}
+function evaluate(v, evidence){
+  const res = {suggest:null, confidence:'', reasons:[], rows:[], findingConds:[], naConds:[], setting:'', observed:'', naReason:''};
+  res.findingConds = sentences(v.check, /this is a finding/i).slice(0,8);
+  res.naConds = sentences(v.check, /\bthis is NA\b|not applicable|\bis NA\b/i).slice(0,4);
+  const ev = evidence || '';
+  if(!ev.trim()){ res.reasons.push('No command output pasted yet. Paste output, then evaluate.'); return res; }
+
+  // 1) Output from your own check scripts (e.g. Status : NotAFinding)
+  const sm = ev.match(/\bStatus\s*[:=]\s*(Not_?A_?Finding|Not a Finding|NotAFinding|Open|Not_?Applicable|Not Applicable|Not_?Reviewed)\b/i);
+  if(sm){
+    res.suggest = normStatus(sm[1]); res.confidence='high';
+    res.reasons.push(`Your check script reported Status = ${sm[1]}.`);
+  }
+
+  // 2) Registry values
+  const regs = registryChecks(v.check); let fails=0, passes=0, unknown=0;
+  const missingKey = /cannot find path|does not exist|unable to find the specified registry|property .* does not exist|not found/i.test(ev);
+  regs.forEach(r=>{
+    const rx = new RegExp('(?<![\\w])' + reEsc(r.name) + '\\s*(?:[:=]|\\s+REG_\\w+)\\s*(\\S+)', 'i');
+    const m = ev.match(rx);
+    const reqTxt = r.exp.txt;
+    const loc = `${hiveShort(r.hive)}${r.path?'\\'+r.path:''}\\${r.name}`;
+    if(m){
+      const obs = parseObserved(m[1]); const ok = meets(r.exp, obs);
+      ok?passes++:fails++;
+      res.rows.push({setting:loc, required:reqTxt, found:String(m[1]), ok});
+      if(!ok) res.observed += (res.observed?'; ':'') + `${loc} was ${m[1]} (required ${reqTxt})`;
+    } else if(missingKey){
+      fails++; res.rows.push({setting:loc, required:reqTxt, found:'not configured / not found', ok:false});
+      res.observed += (res.observed?'; ':'') + `${loc} was not configured (required ${reqTxt})`;
+    } else { unknown++; res.rows.push({setting:loc, required:reqTxt, found:'not in pasted output', ok:null}); }
+    res.setting += (res.setting?'; ':'') + `${loc} = ${reqTxt}${r.type?' ('+r.type+')':''}`;
+  });
+
+  // 3) "If the value for X is less than Y" policy checks
+  policyChecks(v.check).forEach(p=>{
+    const rx = new RegExp(reEsc(p.label).replace(/\\ /g,'\\s+') + '[^\\n\\d]{0,60}?(\\d+|Enabled|Disabled|Never|None)', 'i');
+    const m = ev.match(rx);
+    const req = (p.op.startsWith('less')||p.op.startsWith('fewer')) ? `${p.target} or more`
+              : (p.op.startsWith('greater')||p.op.startsWith('more')) ? `${p.target} or less` : `${p.target}`;
+    res.setting += (res.setting?'; ':'') + `${p.label} = ${req}`;
+    if(!m){ unknown++; res.rows.push({setting:p.label, required:req, found:'not in pasted output', ok:null}); return; }
+    const obs = parseObserved(m[1]); let bad;
+    const n = typeof obs==='number' && typeof p.target==='number';
+    if(p.op.startsWith('less')||p.op.startsWith('fewer')) bad = n ? obs < p.target : null;
+    else if(p.op.startsWith('greater')||p.op.startsWith('more')) bad = n ? obs > p.target : null;
+    else bad = String(obs).toLowerCase() !== String(p.target).toLowerCase();
+    if(bad===null){ unknown++; res.rows.push({setting:p.label, required:req, found:m[1], ok:null}); return; }
+    bad?fails++:passes++;
+    res.rows.push({setting:p.label, required:req, found:m[1], ok:!bad});
+    if(bad) res.observed += (res.observed?'; ':'') + `${p.label} was ${m[1]} (required ${req})`;
+  });
+
+  if(!res.suggest && (fails||passes)){
+    if(fails){ res.suggest='Open'; res.confidence = 'high'; res.reasons.push(`${fails} setting(s) do not meet the requirement.`); }
+    else if(!unknown){ res.suggest='NotAFinding'; res.confidence='high'; res.reasons.push(`All ${passes} setting(s) checked meet the requirement.`); }
+    else { res.suggest='NotAFinding'; res.confidence='medium'; res.reasons.push(`${passes} setting(s) pass; ${unknown} were not found in the output. Check those by hand.`); }
+  }
+
+  // 4) "Must not be installed" checks (roles, features, software)
+  const notInstalledOut = /not installed|NotPresent|not present|Install State\s*:\s*Available|InstallState\s*:\s*Available|\[ \].*\bAvailable\b|^\s*\S.*\s(Available|Removed)\s*$/im.test(ev);
+  const installedOut = /\[X\]|Install State\s*:\s*Installed|InstallState\s*:\s*Installed|^\s*\S.*\sInstalled\s*$/im.test(ev);
+  if(!res.suggest && res.findingConds.some(c=>/\binstalled\b/i.test(c) && !/not installed/i.test(c))){
+    if(installedOut){ res.suggest='Open'; res.confidence='medium'; res.reasons.push('The check says installed = finding, and the output shows it installed.'); }
+    else if(notInstalledOut){ res.suggest='NotAFinding'; res.confidence='medium'; res.reasons.push('The check says installed = finding, and the output shows it is not installed.');
+      res.setting = res.setting || `${v.title.replace(/\.$/,'')} (verified not installed)`; }
+  }
+
+  // 5) Not Applicable hints
+  const naHit = ev.match(/not installed|NotPresent|not present|Install State\s*:\s*Available|InstallState\s*:\s*Available|Removed|feature is not|role is not|no such service|service .* was not found|cannot find any service/i);
+  if(res.naConds.length){
+    res.naReason = res.naConds[0];
+    if(!res.suggest && naHit){ res.suggest='Not_Applicable'; res.confidence='medium'; res.reasons.push(`Output shows "${naHit[0]}" and the check text has an NA condition.`); }
+  }
+  // 6) Generic pass/fail words from tools
+  if(!res.suggest){
+    if(/\b(FAIL(ED)?|NonCompliant|Non-Compliant)\b/.test(ev)){ res.suggest='Open'; res.confidence='low'; res.reasons.push('Output contains a fail / non-compliant marker.'); }
+    else if(/\b(PASS(ED)?|Compliant)\b/.test(ev)){ res.suggest='NotAFinding'; res.confidence='low'; res.reasons.push('Output contains a pass / compliant marker.'); }
+  }
+  if(!res.suggest){
+    res.reasons.push('No automatic match for this rule. Read the finding conditions below, compare them to your output, and pick the status yourself.');
+  }
+  return res;
+}
+
+function fixSummary(v){
+  const flat = v.fix.replace(/\s+/g,' ').trim();
+  const m = flat.match(/Configure the policy value for .*?(?:\.\s|$)/i);
+  if(m) return m[0].trim();
+  const regs = registryChecks(v.check);
+  if(regs.length) return regs.map(r=>`Set ${hiveShort(r.hive)}\\${r.path}\\${r.name} to ${r.exp.txt}${r.type?' ('+r.type+')':''}`).join('; ') + '.';
+  const first = flat.split(/(?<=\.)\s+/).slice(0,2).join(' ');
+  return first.length>400 ? first.slice(0,400)+'…' : first;
+}
+
+/* ---------------- Auto-fill ---------------- */
+function autoValue(f, tpl, v, w){
+  const P=S.profile, today=fmtDate(), tok=f.token.toLowerCase(), lab=f.label.toLowerCase(), before=f.before.toLowerCase();
+  const host = v.host || S.ck?.host || '';
+  const r = w.evalRes || {};
+  const hasEv = !!(w.evidence||'').trim();
+  const nameRole = [P.name, P.role].filter(Boolean).join(', ');
+  if(tok==='date'){
+    if(lab==='status' || lab==='last updated') return today;
+    if(lab==='when' && /(implemented|validated|submitted)\s*$/.test(before)) return today;
+    return '';
+  }
+  if(tok==='name') return lab==='last updated' ? P.name : '';
+  if(tok==='team') return P.team;
+  if(tok==='name, role') return nameRole;
+  if(tok.includes('isse/isso')) return P.isso;
+  if(tok==='ao/issm') return P.ao;
+  if(tok.startsWith('hostnames/systems')) return [host, P.env].filter(Boolean).join(', ');
+  if(tok.startsWith('sil, then production')) return `${P.env||'SIL'}, then ${P.prod || host || 'production'}`;
+  if(lab==='what'){
+    if(tok.startsWith('requirement that cannot')) return `${v.vulnId}${v.ruleVer?' ('+v.ruleVer+')':''}: ${v.title}`;
+    if(tok.startsWith('setting/value verified')) return r.setting || fixSummary(v);
+    return fixSummary(v);
+  }
+  if(lab==='previous state') return r.observed || '';
+  if(lab==='why' && tok.startsWith('why the requirement does not apply')) return r.naReason ? `Per the STIG check: "${r.naReason}"` : '';
+  if(lab==='verification') return hasEv ? `Command output reviewed against the STIG check text on ${host||'the system'}.` : '';
+  if(lab==='how' && (tok.startsWith('how compliance') || tok.startsWith('how it was applied')))
+    return hasEv ? `Compliance verified by manual review of command output against the STIG check text${r.setting ? ' ('+r.setting+')' : ''}.` : '';
+  if(lab==='evidence') return hasEv ? (P.evloc || 'Command output recorded in the checklist Finding Details.') : '';
+  return '';
+}
+function applyAuto(v, w, force){
+  const tpl = S.templates[w.tpl]; if(!tpl) return;
+  templateFields(tpl).forEach(f=>{
+    const cur = w.vals[f.key];
+    if(!force && cur && !cur.auto && cur.v) return;     // keep what the user typed
+    const a = autoValue(f, tpl, v, w);
+    w.vals[f.key] = {v:a, auto: !!a};
+  });
+}
+function tplForStatus(st){
+  const idx = name => S.templates.findIndex(t=>t.name.toLowerCase().includes(name));
+  let i=-1;
+  if(st==='NotAFinding'){ i = idx('compliant at review'); if(i<0) i = S.templates.findIndex(t=>t.status==='NotAFinding'); }
+  else if(st==='Not_Applicable') i = S.templates.findIndex(t=>t.status==='Not_Applicable');
+  else if(st==='Open'){ i = idx('deferred'); if(i<0) i = S.templates.findIndex(t=>t.status==='Open'); }
+  return i<0 ? 0 : i;
+}
+
+/* ---------------- Drafts (unfinished work kept in this browser) ---------------- */
+function draftKey(){ return S.ck && S.ck.type!=='manual' ? 'scw.draft.'+S.ck.fileName+'|'+(S.ck.host||'') : null; }
+function scheduleDraft(){
+  clearTimeout(S.draftTimer);
+  S.draftTimer = setTimeout(()=>{ const k=draftKey(); if(k) store.set(k, S.work); }, 600);
+}
+function loadDrafts(){
+  const k=draftKey(); const d = k ? store.get(k, null) : null; if(!d) return 0;
+  let n=0; S.ck.vulns.forEach(v=>{ const w=d[v.key]; if(w && w.tpl < S.templates.length){ S.work[v.key]=w; n++; } });
+  return n;
+}
+
+/* ---------------- Rendering ---------------- */
+function getWork(v){
+  if(!S.work[v.key]){
+    const st = v.status==='Not_Reviewed' ? 'Open' : v.status;
+    S.work[v.key] = {tpl: tplForStatus(st), vals:{}, evidence: v.details||'', evalRes:null, outManual:false, outText:'', putDetails:true};
+    applyAuto(v, S.work[v.key], true);
+  }
+  return S.work[v.key];
+}
+function filtered(){
+  if(!S.ck) return [];
+  const q=$('q').value.trim().toLowerCase(), fs=$('fStatus').value, fc=$('fCat').value;
+  return S.ck.vulns.filter(v=>
+    (!fs || v.status===fs) && (!fc || v.severity===fc) &&
+    (!q || (v.vulnId+' '+v.ruleId+' '+v.ruleVer+' '+v.title).toLowerCase().includes(q)));
+}
+function renderList(){
+  const list=$('list'); const vs=filtered();
+  list.innerHTML = vs.map(v=>`
+    <div class="item ${v.key===S.sel?'sel':''}" data-k="${esc(v.key)}">
+      <div class="top"><b>${esc(v.vulnId)}</b><span class="cat">${CAT[v.severity]||''}</span>
+      <span class="pill s-${v.status}">${STATUS_LABEL[v.status]}</span>${v.edited?'<span class="edited">● edited</span>':''}</div>
+      <div class="t">${esc(v.title)}</div>
+    </div>`).join('') || '<div class="item muted">No rules match.</div>';
+  if(S.ck){
+    const c={Open:0,NotAFinding:0,Not_Applicable:0,Not_Reviewed:0}; S.ck.vulns.forEach(v=>c[v.status]++);
+    $('counts').textContent = `${S.ck.vulns.length} rules · ${c.Open} Open · ${c.NotAFinding} NaF · ${c.Not_Applicable} NA · ${c.Not_Reviewed} Not Reviewed`;
+  }
+}
+$('list').addEventListener('click', e=>{
+  const it=e.target.closest('.item[data-k]'); if(!it) return;
+  S.sel=it.dataset.k; renderList(); renderDetail();
+});
+
+function curVuln(){ return S.ck && S.ck.vulns.find(v=>v.key===S.sel); }
+
+function renderDetail(){
+  const v=curVuln(); const D=$('detail');
+  if(!v){ return; }
+  const w=getWork(v); const tpl=S.templates[w.tpl]; const fields=templateFields(tpl);
+  const r=w.evalRes;
+  D.innerHTML = `
+  <div class="card">
+    <div class="rulehead"><b>${esc(v.vulnId)}</b> <span>${esc(v.ruleVer)}</span> <span>${esc(v.ruleId)}</span>
+      <span class="cat">${CAT[v.severity]||''}</span> <span class="pill s-${v.status}">${STATUS_LABEL[v.status]}</span>
+      ${v.stig?`<span>· ${esc(v.stig)}</span>`:''} ${(v.host||S.ck.host)?`<span>· Host: <b>${esc(v.host||S.ck.host)}</b></span>`:''}</div>
+    <div class="rtitle">${esc(v.title)}</div>
+    <details ${r?'':'open'}><summary>Check text</summary><pre>${esc(v.check)}</pre></details>
+    <details><summary>Fix text</summary><pre>${esc(v.fix)}</pre></details>
+    ${v.comments?`<details><summary>Current comment in checklist</summary><pre>${esc(v.comments)}</pre></details>`:''}
+  </div>
+
+  <div class="card">
+    <h3>1. Evidence <span class="sp"></span><span class="muted">Paste PowerShell, reg query, Get-GPResultantSetOfPolicy, auditpol or script output</span></h3>
+    <textarea id="ev" class="ev" placeholder="Paste command output here…">${esc(w.evidence)}</textarea>
+    <div class="row"><button class="primary" id="btnEval">Evaluate</button>
+      <label class="muted"><input type="checkbox" id="putDetails" style="width:auto" ${w.putDetails?'checked':''}> Save this output to Finding Details</label>
+      <span class="muted" style="margin-left:auto"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> evaluates</span></div>
+  </div>
+
+  ${r?`<div class="card">
+    <h3>2. Result</h3>
+    <div class="verdict">${r.suggest?`Suggested status: <span class="pill s-${r.suggest} big">${STATUS_LABEL[r.suggest]}</span> <span class="muted">${r.confidence} confidence</span>`:'<span class="big">Manual review needed</span>'}</div>
+    <ul class="reasons">${r.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>
+    ${r.rows.length?`<table><tr><th>Setting</th><th>Required</th><th>Found</th><th>Result</th></tr>
+      ${r.rows.map(x=>`<tr><td>${esc(x.setting)}</td><td>${esc(x.required)}</td><td>${esc(x.found)}</td>
+      <td class="${x.ok===true?'pass':x.ok===false?'fail':''}">${x.ok===true?'Pass':x.ok===false?'Fail':'Check by hand'}</td></tr>`).join('')}</table>`:''}
+    ${r.findingConds.length?`<details ${r.rows.length?'':'open'}><summary>Finding conditions from the check text</summary><ul class="reasons cond">${r.findingConds.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:''}
+    ${r.naConds.length?`<details><summary>Not Applicable conditions</summary><ul class="reasons cond">${r.naConds.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:''}
+  </div>`:''}
+
+  <div class="grid2">
+    <div class="card">
+      <h3>${r?'3':'2'}. Fill in the template</h3>
+      <div class="fld"><label>Template</label>
+        <select id="tplSel">${S.templates.map((t,i)=>`<option value="${i}" ${i===w.tpl?'selected':''}>${esc(t.name)} → ${STATUS_LABEL[t.status]}</option>`).join('')}</select></div>
+      <p class="muted" style="margin:8px 0">Fields with a blue edge were filled in for you. Change anything. Blank fields stay as [brackets] in the comment so you can spot them.</p>
+      <div class="fields">${fields.map(f=>{
+        const val=(w.vals[f.key]||{}).v||''; const auto=(w.vals[f.key]||{}).auto && val;
+        const long = LONG_LABELS.test(f.label) || f.token.length>60;
+        const ctx = f.before ? ` <span class="ctx">— after “${esc(f.before.slice(-40))}”</span>`
+                  : (f.token.length<40 ? ` <span class="ctx">— ${esc(f.token)}</span>` : '');
+        return `<div class="fld ${auto?'auto':''}"><label>${esc(f.label||'Field')}${ctx}</label>
+          ${long?`<textarea rows="2" data-key="${f.key}" placeholder="${esc(f.token)}">${esc(val)}</textarea>`
+                :`<input data-key="${f.key}" placeholder="${esc(f.token)}" value="${esc(val)}">`}</div>`;}).join('')}
+      </div>
+    </div>
+    <div class="card" style="position:sticky;top:0;align-self:start">
+      <h3>${r?'4':'3'}. Comment <span class="sp"></span><span id="blankNote"></span></h3>
+      <textarea id="out" class="out"></textarea>
+      <div class="row">
+        <button class="primary" id="btnApply">${S.ck.type==='manual'?'Mark done':'Apply to checklist'}</button>
+        <button id="btnCopy">Copy comment</button>
+        <button id="btnRegen" title="Throw away hand edits in the box above">Rebuild from fields</button>
+        <button id="btnNext" style="margin-left:auto">Next not reviewed →</button>
+      </div>
+      <p class="muted" id="applyNote" style="margin-bottom:0">Sets status to <b>${STATUS_LABEL[tpl.status]}</b> and writes this comment to the rule.</p>
+    </div>
+  </div>`;
+  updateOut();
+
+  $('ev').addEventListener('input', e=>{ w.evidence=e.target.value; });
+  $('ev').addEventListener('keydown', e=>{ if(e.key==='Enter' && (e.ctrlKey||e.metaKey)){ e.preventDefault(); $('btnEval').click(); }});
+  $('putDetails').addEventListener('change', e=>{ w.putDetails=e.target.checked; });
+  $('btnEval').addEventListener('click', ()=>{
+    w.evalRes = evaluate(v, w.evidence);
+    if(w.evalRes.suggest) w.tpl = tplForStatus(w.evalRes.suggest);
+    applyAuto(v, w, false); w.outManual=false; renderDetail();
+  });
+  $('tplSel').addEventListener('change', e=>{ w.tpl=Number(e.target.value); w.vals={}; applyAuto(v,w,true); w.outManual=false; renderDetail(); });
+  D.querySelectorAll('[data-key]').forEach(inp=>inp.addEventListener('input', e=>{
+    w.vals[e.target.dataset.key] = {v:e.target.value, auto:false};
+    e.target.closest('.fld').classList.remove('auto');
+    if(!w.outManual) updateOut();
+  }));
+  $('out').addEventListener('input', e=>{ w.outManual=true; w.outText=e.target.value; });
+  $('btnRegen').addEventListener('click', ()=>{ w.outManual=false; updateOut(); });
+  $('btnCopy').addEventListener('click', ()=>copyText($('out').value));
+  $('btnApply').addEventListener('click', ()=>{
+    const text=$('out').value; const left=(text.match(/\[[^\]]+\]/g)||[]).length;
+    if(left && !confirm(`${left} field(s) are still in [brackets]. Apply anyway?`)) return;
+    writeBack(v, tpl.status, text, (w.putDetails && w.evidence.trim()) ? w.evidence : null);
+    toast(`${v.vulnId} set to ${STATUS_LABEL[tpl.status]}`); renderList(); renderDetail();
+  });
+  $('btnNext').addEventListener('click', ()=>{
+    const all=S.ck.vulns; const i=all.findIndex(x=>x.key===v.key);
+    const n = all.slice(i+1).concat(all.slice(0,i)).find(x=>x.status==='Not_Reviewed');
+    if(!n){ toast('No Not Reviewed rules left'); return; }
+    S.sel=n.key; renderList(); renderDetail();
+    const el=document.querySelector('.item.sel'); if(el) el.scrollIntoView({block:'nearest'});
+  });
+  function updateOut(){
+    const text = w.outManual ? w.outText : renderComment(tpl, w.vals);
+    if(!w.outManual) w.outText=text;
+    $('out').value = text;
+    const left=(text.match(/\[[^\]]+\]/g)||[]).length;
+    $('blankNote').innerHTML = left ? `<span class="warn">${left} field(s) still blank</span>` : `<span class="ok">All fields filled</span>`;
+  }
+}
+
+function copyText(t){
+  const done=()=>toast('Comment copied');
+  if(navigator.clipboard && window.isSecureContext){ navigator.clipboard.writeText(t).then(done, fallback); } else fallback();
+  function fallback(){ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){ toast('Select the text and press Ctrl+C'); } ta.remove(); }
+}
+
+/* ---------------- Loading ---------------- */
+function loadText(text, name, handle){
+  try{
+    const isJson = /^\s*[\{\[]/.test(text);
+    S.ck = isJson ? parseCklb(text, name) : parseCkl(text, name);
+    S.work={}; S.dirty=false; S.handle=handle||null;
+    const restored = loadDrafts();
+    $('fileLabel').textContent = `${name}${S.ck.host?' · '+S.ck.host:''}`;
+    $('btnExport').disabled = false; setSaveState();
+    if(restored) toast(`Picked up your unfinished work on ${restored} rule(s)`);
+    const first = S.ck.vulns.find(v=>v.status==='Not_Reviewed') || S.ck.vulns[0];
+    S.sel = first.key; renderList(); renderDetail();
+  }catch(err){ alert(err.message); }
+}
+$('fileIn').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader(); rd.onload=()=>loadText(rd.result, f.name); rd.readAsText(f); e.target.value='';
+});
+$('btnOpen').addEventListener('click', async ()=>{
+  if(S.dirty && !confirm('You have changes that are not saved to a checklist file. Open a new one anyway?')) return;
+  if(!window.showOpenFilePicker){ $('fileIn').click(); return; }   // Firefox etc.: open without auto-save
+  let h;
+  try{
+    [h] = await window.showOpenFilePicker({types:[{description:'STIG checklist', accept:{'text/xml':['.ckl'], 'application/json':['.cklb']}}]});
+  }catch(err){ if(err && err.name==='AbortError') return; $('fileIn').click(); return; }
+  let ok=false;
+  try{ ok = (await h.requestPermission({mode:'readwrite'})) === 'granted'; }catch(e){ ok=false; }
+  const f = await h.getFile();
+  loadText(await f.text(), f.name, ok ? h : null);
+  if(!ok) toast('Edit permission not given, so auto-save is off. Use Save checklist.');
+});
+$('btnExport').addEventListener('click', exportChecklist);
+$('detail').addEventListener('input', scheduleDraft);
+$('detail').addEventListener('change', scheduleDraft);
+$('detail').addEventListener('click', e=>{ if(e.target.closest('button')) scheduleDraft(); });
+['q','fStatus','fCat'].forEach(id=>$(id).addEventListener('input', renderList));
+window.addEventListener('beforeunload', e=>{ if(S.dirty){ e.preventDefault(); e.returnValue=''; } });
+
+/* ---------------- Manual rule ---------------- */
+$('btnManual').addEventListener('click', ()=>$('dlgManual').showModal());
+$('mCancel').addEventListener('click', ()=>$('dlgManual').close());
+$('mAdd').addEventListener('click', ()=>{
+  const vid=$('mVid').value.trim()||'V-?'; const host=$('mHost').value.trim();
+  if(!S.ck || S.ck.type!=='manual'){ S.ck={type:'manual', fileName:'', host, vulns:[]}; S.work={}; }
+  const v={key:'m|'+vid+'|'+Date.now(), vulnId:vid, ruleId:$('mRid').value.trim(), ruleVer:'', title:$('mTitle').value.trim(),
+    severity:$('mSev').value, check:$('mCheck').value, fix:$('mFix').value, status:'Not_Reviewed', comments:'', details:'', stig:'', host, ref:null, edited:false};
+  S.ck.vulns.push(v); S.sel=v.key;
+  $('fileLabel').textContent='Pasted rules (copy comments out; nothing to save)'; $('btnExport').disabled=true;
+  ['mVid','mTitle','mRid','mCheck','mFix'].forEach(id=>$(id).value='');
+  $('dlgManual').close(); renderList(); renderDetail();
+});
+
+/* ---------------- Profile ---------------- */
+const PF = {pName:'name',pRole:'role',pTeam:'team',pIsso:'isso',pAo:'ao',pEnv:'env',pProd:'prod',pFmt:'fmt',pEvLoc:'evloc'};
+$('btnProfile').addEventListener('click', ()=>{ for(const [id,k] of Object.entries(PF)) $(id).value=S.profile[k]||(k==='fmt'?'YYYY-MM-DD':''); $('dlgProfile').showModal(); });
+$('pCancel').addEventListener('click', ()=>$('dlgProfile').close());
+$('pSave').addEventListener('click', ()=>{
+  for(const [id,k] of Object.entries(PF)) S.profile[k]=$(id).value.trim();
+  store.set('scw.profile', S.profile); $('dlgProfile').close();
+  const v=curVuln(); if(v){ applyAuto(v, getWork(v), false); getWork(v).outManual=false; renderDetail(); }
+  toast('Saved');
+});
+
+/* ---------------- Templates dialog ---------------- */
+$('btnTemplates').addEventListener('click', ()=>{ $('tplText').value=S.tplText; $('dlgTemplates').showModal(); });
+$('tplCancel').addEventListener('click', ()=>$('dlgTemplates').close());
+$('tplReset').addEventListener('click', ()=>{ $('tplText').value=DEFAULT_TEMPLATES; });
+$('tplFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ $('tplText').value=rd.result; }; rd.readAsText(f); e.target.value=''; });
+$('tplSave').addEventListener('click', ()=>{
+  const t=parseTemplates($('tplText').value);
+  if(!t.length){ alert('No templates found. Check the format.'); return; }
+  S.tplText=$('tplText').value; S.templates=t; store.set('scw.templates', S.tplText);
+  Object.values(S.work).forEach(w=>{ if(w.tpl>=t.length) w.tpl=0; w.vals={}; w.outManual=false; });
+  if(S.ck) S.ck.vulns.forEach(v=>{ if(S.work[v.key]) applyAuto(v, S.work[v.key], true); });
+  $('dlgTemplates').close(); if(curVuln()) renderDetail(); toast(`${t.length} templates saved`);
+});
+
+if(!S.profile.name) setTimeout(()=>toast('Tip: set My info first so names fill in'), 600);
+</script>
+</body>
+</html>

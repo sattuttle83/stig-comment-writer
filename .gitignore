@@ -1,0 +1,5 @@
+# test checklists and real checklists never belong in the repo
+*.ckl
+*.cklb
+.DS_Store
+Thumbs.db

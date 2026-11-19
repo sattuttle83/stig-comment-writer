@@ -45,6 +45,10 @@ main{display:grid;grid-template-columns:330px 1fr;height:calc(100vh - 53px)}
 .s-NotAFinding{color:var(--naf);background:var(--naf-bg)}
 .s-Not_Applicable{color:var(--na);background:var(--na-bg)}
 .s-Not_Reviewed{color:var(--nr);background:var(--nr-bg)}
+.s-mixed{color:var(--accent);background:var(--soft)}
+table.targets td{vertical-align:middle}
+details.cmt{margin:0} details.cmt summary{color:var(--ink);font-size:12.5px}
+details.cmt pre{max-height:200px}
 .cat{font-size:11px;color:var(--muted);font-weight:600}
 .edited{font-size:11px;color:var(--accent)}
 #detail{overflow:auto;padding:16px 20px 60px}
@@ -96,9 +100,10 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
 <body>
 <header>
   <h1>STIG Comment Writer</h1>
-  <button id="btnOpen">Open checklist (.ckl / .cklb)</button><input type="file" id="fileIn" accept=".ckl,.cklb,.json,.xml" hidden>
+  <button id="btnOpen">Open checklists (.ckl / .cklb)</button><input type="file" id="fileIn" accept=".ckl,.cklb,.json,.xml" multiple hidden>
   <button id="btnManual">Paste a single rule</button>
-  <button id="btnExport" class="primary" disabled>Save checklist</button>
+  <button id="btnExport" class="primary" disabled>Save checklists</button>
+  <button id="btnCloseAll" hidden>Close all</button>
   <button id="btnProfile">My info</button>
   <button id="btnTemplates">Templates</button>
   <span class="file"><span id="fileLabel">No checklist loaded</span> <span id="saveState" class="muted"></span></span>
@@ -128,8 +133,8 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
   </aside>
   <section id="detail">
     <div class="empty">
-      <h2>Open a checklist to start</h2>
-      <p>Load a <b>.ckl</b> (STIG Viewer 2) or <b>.cklb</b> (STIG Viewer 3 / STIG Manager export). Pick a rule, paste your command output, and press <b>Evaluate</b>. The app checks the output against the rule's check text, suggests a status, and fills in your comment template.</p>
+      <h2>Open checklists to start</h2>
+      <p>Pick one or several at once (Ctrl+click), for example the same STIG on every host. Load a <b>.ckl</b> (STIG Viewer 2) or <b>.cklb</b> (STIG Viewer 3 / STIG Manager export). Pick a rule, paste your command output, and press <b>Evaluate</b>. The app checks the output against the rule's check text, suggests a status, and fills in your comment template.</p>
       <p>No checklist handy? Use <b>Paste a single rule</b>.</p>
       <p>Set <b>My info</b> once (name, role, team, ISSO). It's saved in this browser and fills the Who and Last Updated lines.</p>
       <p class="muted">Runs fully offline. Nothing leaves this page.</p>
@@ -253,16 +258,16 @@ const store = {
 
 /* ---------------- State ---------------- */
 const S = {
-  ck: null,            // {type, fileName, doc|json, host, vulns:[]}
-  sel: null,           // vuln key
-  work: {},            // per vuln: {tpl, vals:{key:{v,auto}}, evidence, evalRes, outManual, outText, putDetails}
+  cks: [],             // loaded checklists: {id, type, fileName, doc|json, host, vulns:[], handle, dirty, saveChain}
+  rules: [],           // one group per Vuln ID across all checklists: {key, vulnId, ..., items:[vuln]}
+  sel: null,           // selected group key
+  work: {},            // per group: {tpl, vals:{key:{v,auto}}, evidence, evalRes, outManual, outText, detailsMode, evHost, targets}
   profile: store.get('scw.profile', {name:'',role:'',team:'',isso:'',ao:'',env:'SIL',prod:'',fmt:'YYYY-MM-DD',evloc:''}),
   tplText: store.get('scw.templates', DEFAULT_TEMPLATES),
   templates: [],
-  dirty: false,
-  handle: null,        // File System Access handle → auto-save back to the same file
-  saveChain: Promise.resolve(),
-  draftTimer: null
+  lastSave: '',
+  draftTimer: null,
+  ckSeq: 0
 };
 S.templates = parseTemplates(S.tplText);
 
@@ -387,20 +392,18 @@ function parseCklb(text, fileName){
 }
 
 function writeBack(v, status, comment, details){
+  const ck=v.ck;
   v.status=status; v.comments=comment; if(details!=null) v.details=details; v.edited=true;
-  if(S.ck.type==='ckl'){
-    const d=S.ck.doc, el=v.ref;
+  if(ck.type==='ckl'){
+    const d=ck.doc, el=v.ref;
     const setKid=(name,val)=>{ let n=el.querySelector(':scope > '+name); if(!n){ n=d.createElement(name); el.appendChild(n);} n.textContent=val; };
     setKid('STATUS', status); setKid('COMMENTS', comment); if(details!=null) setKid('FINDING_DETAILS', details);
-  } else if(S.ck.type==='cklb'){
+  } else if(ck.type==='cklb'){
     v.ref.status=CKLB_STATUS[status]; v.ref.comments=comment; if(details!=null) v.ref.finding_details=details;
   }
-  S.dirty = S.ck.type!=='manual';
-  $('btnExport').disabled = S.ck.type==='manual';
-  if(S.handle) saveToFile(); else setSaveState();
+  if(ck.type!=='manual') ck.dirty=true;
 }
-function serializeChecklist(){
-  const ck=S.ck;
+function serializeChecklist(ck){
   if(ck.type==='ckl'){
     let xml = new XMLSerializer().serializeToString(ck.doc);
     if(!/^<\?xml/.test(xml)) xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml;
@@ -409,36 +412,50 @@ function serializeChecklist(){
   if(ck.type==='cklb') return JSON.stringify(ck.json, null, 2);
   return null;
 }
-// Write straight back to the opened file (Edge / Chrome). Saves run one at a time.
-function saveToFile(){
-  const text = serializeChecklist(); if(text==null || !S.handle) return;
-  setSaveState('Saving…');
-  S.saveChain = S.saveChain.then(async ()=>{
+// Write straight back to the opened file (Edge / Chrome). Saves to one file run one at a time.
+function saveToFile(ck){
+  const text = serializeChecklist(ck); if(text==null || !ck.handle) return Promise.resolve(false);
+  ck.saveChain = (ck.saveChain||Promise.resolve()).then(async ()=>{
     try{
-      const w = await S.handle.createWritable();
+      const w = await ck.handle.createWritable();
       await w.write(text); await w.close();
-      S.dirty=false;
-      setSaveState('Auto-saved ' + new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}));
-    }catch(err){
-      setSaveState('<span class="warn">Auto-save failed. Click Save checklist.</span>');
-      console.error(err);
-    }
+      ck.dirty=false; ck.saveErr=false; return true;
+    }catch(err){ ck.saveErr=true; console.error(err); return false; }
   });
+  return ck.saveChain;
+}
+async function autoSave(cks){
+  const withHandle = cks.filter(c=>c.handle && c.dirty);
+  if(!withHandle.length){ setSaveState(); return; }
+  setSaveState('Saving…');
+  await Promise.all(withHandle.map(saveToFile));
+  S.lastSave = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  setSaveState(); renderList();
 }
 function setSaveState(msg){
-  const el=$('saveState'); if(!S.ck || S.ck.type==='manual'){ el.innerHTML=''; return; }
+  const el=$('saveState'); const real=S.cks.filter(c=>c.type!=='manual');
+  $('btnExport').disabled = !real.length;
+  if(!real.length){ el.innerHTML=''; return; }
   if(msg){ el.innerHTML='· '+msg; return; }
-  el.innerHTML = S.handle ? '· Auto-save on'
-    : (S.dirty ? '· <span class="warn">Not saved. Click Save checklist.</span>' : '· Auto-save off (this browser can\'t write to the file)');
+  const failed = real.filter(c=>c.saveErr), unsaved = real.filter(c=>c.dirty), noHandle = real.filter(c=>!c.handle);
+  if(failed.length){ el.innerHTML = `· <span class="warn">Auto-save failed on ${failed.map(c=>esc(c.host||c.fileName)).join(', ')}. Click Save checklists.</span>`; return; }
+  if(unsaved.length){ el.innerHTML = `· <span class="warn">${unsaved.length} checklist(s) not saved. Click Save checklists.</span>`; return; }
+  if(noHandle.length===real.length){ el.innerHTML = '· Auto-save off (this browser can\'t write to the files)'; return; }
+  el.innerHTML = '· ' + (S.lastSave ? 'Auto-saved '+S.lastSave : 'Auto-save on') + (noHandle.length ? ` <span class="warn">(not ${noHandle.length} opened without edit permission)</span>` : '');
 }
-function exportChecklist(){
-  const ck=S.ck;
-  if(S.handle){ saveToFile(); toast('Saved to '+ck.fileName); return; }
-  const text = serializeChecklist(); if(text==null) return;
-  const blob = new Blob([text], {type: ck.type==='ckl' ? 'application/xml' : 'application/json'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=ck.fileName; document.body.appendChild(a); a.click();
-  setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();}, 500);
-  S.dirty=false; setSaveState(); toast('Checklist saved to your downloads');
+async function exportChecklists(){
+  const real=S.cks.filter(c=>c.type!=='manual'); let saved=0, dl=0;
+  for(const ck of real){
+    if(ck.handle){ ck.dirty=true; if(await saveToFile(ck)) saved++; continue; }
+    if(!ck.dirty) continue;
+    const blob = new Blob([serializeChecklist(ck)], {type: ck.type==='ckl' ? 'application/xml' : 'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=ck.fileName; document.body.appendChild(a); a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();}, 500);
+    ck.dirty=false; dl++;
+  }
+  S.lastSave = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  setSaveState(); renderList();
+  toast([saved?`Saved ${saved} file(s)`:'', dl?`${dl} downloaded`:''].filter(Boolean).join(' · ') || 'Nothing to save');
 }
 
 /* ---------------- Evaluation engine ---------------- */
@@ -594,9 +611,9 @@ function fixSummary(v){
 }
 
 /* ---------------- Auto-fill ---------------- */
-function autoValue(f, tpl, v, w){
+function autoValue(f, tpl, v, w, hostArg){
   const P=S.profile, today=fmtDate(), tok=f.token.toLowerCase(), lab=f.label.toLowerCase(), before=f.before.toLowerCase();
-  const host = v.host || S.ck?.host || '';
+  const host = hostArg!=null ? hostArg : primaryHost(v, w);
   const r = w.evalRes || {};
   const hasEv = !!(w.evidence||'').trim();
   const nameRole = [P.name, P.role].filter(Boolean).join(', ');
@@ -630,7 +647,7 @@ function applyAuto(v, w, force){
   templateFields(tpl).forEach(f=>{
     const cur = w.vals[f.key];
     if(!force && cur && !cur.auto && cur.v) return;     // keep what the user typed
-    const a = autoValue(f, tpl, v, w);
+    const a = autoValue(f, tpl, v, w, primaryHost(v, w));
     w.vals[f.key] = {v:a, auto: !!a};
   });
 }
@@ -644,74 +661,172 @@ function tplForStatus(st){
 }
 
 /* ---------------- Drafts (unfinished work kept in this browser) ---------------- */
-function draftKey(){ return S.ck && S.ck.type!=='manual' ? 'scw.draft.'+S.ck.fileName+'|'+(S.ck.host||'') : null; }
+// Saved per Vuln ID, so unfinished work comes back whichever checklists you reopen.
 function scheduleDraft(){
   clearTimeout(S.draftTimer);
-  S.draftTimer = setTimeout(()=>{ const k=draftKey(); if(k) store.set(k, S.work); }, 600);
+  S.draftTimer = setTimeout(()=>{
+    const all = store.get('scw.drafts', {});
+    for(const [k,w] of Object.entries(S.work)){
+      const evCk = S.cks.find(c=>c.id===w.evHost);
+      all[k] = {tpl:w.tpl, vals:w.vals, evidence:w.evidence, evalRes:w.evalRes, outManual:w.outManual, outText:w.outText,
+                detailsMode:w.detailsMode, evHostName: evCk ? evCk.host : (w.evHostName||'')};
+    }
+    store.set('scw.drafts', all);
+  }, 600);
 }
-function loadDrafts(){
-  const k=draftKey(); const d = k ? store.get(k, null) : null; if(!d) return 0;
-  let n=0; S.ck.vulns.forEach(v=>{ const w=d[v.key]; if(w && w.tpl < S.templates.length){ S.work[v.key]=w; n++; } });
-  return n;
+function restoreDraft(g){
+  const d = store.get('scw.drafts', {})[g.key];
+  if(!d || !(d.tpl < S.templates.length)) return null;
+  const w = Object.assign(newWork(g), d);
+  const ck = g.items.map(v=>v.ck).find(c=>c.host && c.host===d.evHostName);
+  if(ck) w.evHost = ck.id;
+  return w;
+}
+
+/* ---------------- Grouping: one row per Vuln ID across all open checklists ---------------- */
+function rebuildRules(){
+  const map=new Map();
+  S.cks.forEach(ck=>ck.vulns.forEach(v=>{
+    const k = v.vulnId || v.key;
+    if(!map.has(k)) map.set(k, {key:k, vulnId:v.vulnId, ruleVer:v.ruleVer, ruleId:v.ruleId, title:v.title, severity:v.severity,
+                                check:v.check, fix:v.fix, stig:v.stig, items:[]});
+    map.get(k).items.push(v);
+  }));
+  S.rules=[...map.values()];
+  // drop selections of checklists that were closed
+  Object.values(S.work).forEach(w=>{ w.targets = w.targets.filter(id=>S.cks.some(c=>c.id===id)); });
+}
+function groupStatus(g){
+  const st=[...new Set(g.items.map(v=>v.status))];
+  return st.length===1 ? st[0] : 'Mixed';
 }
 
 /* ---------------- Rendering ---------------- */
-function getWork(v){
-  if(!S.work[v.key]){
-    const st = v.status==='Not_Reviewed' ? 'Open' : v.status;
-    S.work[v.key] = {tpl: tplForStatus(st), vals:{}, evidence: v.details||'', evalRes:null, outManual:false, outText:'', putDetails:true};
-    applyAuto(v, S.work[v.key], true);
+function newWork(g){
+  return {tpl:0, vals:{}, evidence:'', evalRes:null, outManual:false, outText:'', detailsMode:'evhost',
+          evHost: g.items[0].ck.id, targets: g.items.map(v=>v.ck.id)};
+}
+function getWork(g){
+  let w=S.work[g.key];
+  if(!w){
+    w = restoreDraft(g);
+    if(!w){
+      w = newWork(g);
+      const st = groupStatus(g);
+      w.tpl = tplForStatus(st==='Not_Reviewed'||st==='Mixed' ? 'Open' : st);
+      w.evidence = (g.items.find(v=>v.details) || {}).details || '';
+      const first = g.items.find(v=>v.details); if(first) w.evHost = first.ck.id;
+      applyAuto(g, w, true);
+    }
+    S.work[g.key]=w;
   }
-  return S.work[v.key];
+  // targets: any checklist with this rule that isn't tracked yet starts ticked
+  g.items.forEach(v=>{ if(!w.targets.includes(v.ck.id) && !(w.untargeted||[]).includes(v.ck.id)) w.targets.push(v.ck.id); });
+  if(!g.items.some(v=>v.ck.id===w.evHost)) w.evHost = g.items[0].ck.id;
+  return w;
+}
+function primaryHost(g, w){
+  const ck = S.cks.find(c=>c.id===w.evHost) || g.items[0].ck;
+  return ck.host || '';
 }
 function filtered(){
-  if(!S.ck) return [];
   const q=$('q').value.trim().toLowerCase(), fs=$('fStatus').value, fc=$('fCat').value;
-  return S.ck.vulns.filter(v=>
-    (!fs || v.status===fs) && (!fc || v.severity===fc) &&
-    (!q || (v.vulnId+' '+v.ruleId+' '+v.ruleVer+' '+v.title).toLowerCase().includes(q)));
+  return S.rules.filter(g=>
+    (!fs || g.items.some(v=>v.status===fs)) && (!fc || g.severity===fc) &&
+    (!q || (g.vulnId+' '+g.ruleId+' '+g.ruleVer+' '+g.title).toLowerCase().includes(q)));
+}
+function statusPill(g){
+  const st=groupStatus(g);
+  if(st!=='Mixed') return `<span class="pill s-${st}">${STATUS_LABEL[st]}</span>`;
+  const c={}; g.items.forEach(v=>c[v.status]=(c[v.status]||0)+1);
+  return `<span class="pill s-mixed" title="${esc(Object.entries(c).map(([k,n])=>n+' '+STATUS_LABEL[k]).join(', '))}">Mixed</span>`;
 }
 function renderList(){
-  const list=$('list'); const vs=filtered();
-  list.innerHTML = vs.map(v=>`
-    <div class="item ${v.key===S.sel?'sel':''}" data-k="${esc(v.key)}">
-      <div class="top"><b>${esc(v.vulnId)}</b><span class="cat">${CAT[v.severity]||''}</span>
-      <span class="pill s-${v.status}">${STATUS_LABEL[v.status]}</span>${v.edited?'<span class="edited">● edited</span>':''}</div>
-      <div class="t">${esc(v.title)}</div>
-    </div>`).join('') || '<div class="item muted">No rules match.</div>';
-  if(S.ck){
-    const c={Open:0,NotAFinding:0,Not_Applicable:0,Not_Reviewed:0}; S.ck.vulns.forEach(v=>c[v.status]++);
-    $('counts').textContent = `${S.ck.vulns.length} rules · ${c.Open} Open · ${c.NotAFinding} NaF · ${c.Not_Applicable} NA · ${c.Not_Reviewed} Not Reviewed`;
-  }
+  const list=$('list'); const gs=filtered(); const multi=S.cks.length>1;
+  list.innerHTML = gs.map(g=>`
+    <div class="item ${g.key===S.sel?'sel':''}" data-k="${esc(g.key)}">
+      <div class="top"><b>${esc(g.vulnId)}</b><span class="cat">${CAT[g.severity]||''}</span>
+      ${statusPill(g)}${multi?`<span class="cat">${g.items.length}/${S.cks.length}</span>`:''}${g.items.some(v=>v.edited)?'<span class="edited">● edited</span>':''}</div>
+      <div class="t">${esc(g.title)}</div>
+    </div>`).join('') || `<div class="item muted">${S.cks.length?'No rules match.':'No checklists open.'}</div>`;
+  const c={Open:0,NotAFinding:0,Not_Applicable:0,Not_Reviewed:0}; let n=0;
+  S.cks.forEach(ck=>ck.vulns.forEach(v=>{c[v.status]++; n++;}));
+  $('counts').textContent = S.cks.length
+    ? `${S.cks.length} checklist(s) · ${S.rules.length} rules · ${c.Open} Open · ${c.NotAFinding} NaF · ${c.Not_Applicable} NA · ${c.Not_Reviewed} NR`
+    : '';
+  renderFiles();
+}
+function renderFiles(){
+  const real=S.cks;
+  $('fileLabel').innerHTML = !real.length ? 'No checklist loaded'
+    : real.length===1 ? esc(real[0].fileName + (real[0].host?' · '+real[0].host:''))
+    : `${real.length} checklists open <span class="muted">(${esc(real.map(c=>c.host||c.fileName).join(', '))})</span>`;
+  $('btnCloseAll').hidden = !real.length;
 }
 $('list').addEventListener('click', e=>{
   const it=e.target.closest('.item[data-k]'); if(!it) return;
   S.sel=it.dataset.k; renderList(); renderDetail();
 });
 
-function curVuln(){ return S.ck && S.ck.vulns.find(v=>v.key===S.sel); }
+function curGroup(){ return S.rules.find(g=>g.key===S.sel); }
+const ckName = ck => ck.host || ck.fileName;
+
+// The comment for one checklist: host-specific fields that were filled in for you get that checklist's host.
+function commentFor(g, w, tpl, ck){
+  if(w.outManual){
+    const ph = primaryHost(g, w);
+    return (ph && ck.host && ph!==ck.host) ? w.outText.split(ph).join(ck.host) : w.outText;
+  }
+  const vals={};
+  templateFields(tpl).forEach(f=>{
+    const cur=w.vals[f.key];
+    vals[f.key] = (cur && cur.auto) ? {v:autoValue(f, tpl, g, w, ck.host), auto:true} : cur;
+  });
+  return renderComment(tpl, vals);
+}
 
 function renderDetail(){
-  const v=curVuln(); const D=$('detail');
-  if(!v){ return; }
-  const w=getWork(v); const tpl=S.templates[w.tpl]; const fields=templateFields(tpl);
-  const r=w.evalRes;
+  const g=curGroup(); const D=$('detail');
+  if(!g){ D.innerHTML='<div class="empty"><h2>No rule selected</h2></div>'; return; }
+  const w=getWork(g); const tpl=S.templates[w.tpl]; const fields=templateFields(tpl);
+  const r=w.evalRes; const multi=g.items.length>1;
+  const nT = w.targets.length;
   D.innerHTML = `
   <div class="card">
-    <div class="rulehead"><b>${esc(v.vulnId)}</b> <span>${esc(v.ruleVer)}</span> <span>${esc(v.ruleId)}</span>
-      <span class="cat">${CAT[v.severity]||''}</span> <span class="pill s-${v.status}">${STATUS_LABEL[v.status]}</span>
-      ${v.stig?`<span>· ${esc(v.stig)}</span>`:''} ${(v.host||S.ck.host)?`<span>· Host: <b>${esc(v.host||S.ck.host)}</b></span>`:''}</div>
-    <div class="rtitle">${esc(v.title)}</div>
-    <details ${r?'':'open'}><summary>Check text</summary><pre>${esc(v.check)}</pre></details>
-    <details><summary>Fix text</summary><pre>${esc(v.fix)}</pre></details>
-    ${v.comments?`<details><summary>Current comment in checklist</summary><pre>${esc(v.comments)}</pre></details>`:''}
+    <div class="rulehead"><b>${esc(g.vulnId)}</b> <span>${esc(g.ruleVer)}</span> <span>${esc(g.ruleId)}</span>
+      <span class="cat">${CAT[g.severity]||''}</span> ${statusPill(g)}
+      ${g.stig?`<span>· ${esc(g.stig)}</span>`:''}</div>
+    <div class="rtitle">${esc(g.title)}</div>
+    <details ${r?'':'open'}><summary>Check text</summary><pre>${esc(g.check)}</pre></details>
+    <details><summary>Fix text</summary><pre>${esc(g.fix)}</pre></details>
   </div>
 
   <div class="card">
-    <h3>1. Evidence <span class="sp"></span><span class="muted">Paste PowerShell, reg query, Get-GPResultantSetOfPolicy, auditpol or script output</span></h3>
+    <h3>Checklists with this rule <span class="sp"></span>
+      ${multi?`<button id="tAll">All</button><button id="tNone">None</button>`:''}</h3>
+    <table class="targets"><tr><th style="width:34px">Apply</th><th>Host</th><th>Status</th><th>Current comment</th><th></th></tr>
+    ${g.items.map(v=>{ const on=w.targets.includes(v.ck.id); return `<tr>
+      <td><input type="checkbox" class="tgt" data-ck="${esc(v.ck.id)}" ${on?'checked':''} style="width:auto"></td>
+      <td><b>${esc(ckName(v.ck))}</b><div class="muted">${esc(v.ck.fileName)}</div></td>
+      <td><span class="pill s-${v.status}">${STATUS_LABEL[v.status]}</span>${v.edited?' <span class="edited">●</span>':''}</td>
+      <td>${v.comments?`<details class="cmt"><summary>${esc(v.comments.split('\n')[0].slice(0,90))}</summary><pre>${esc(v.comments)}</pre></details>`:'<span class="muted">None</span>'}</td>
+      <td>${v.comments?`<button class="useCmt" data-ck="${esc(v.ck.id)}" title="Put this comment in the comment box so you can change it">Edit this one</button>`:''}</td>
+    </tr>`;}).join('')}</table>
+    ${multi?`<p class="muted" style="margin:8px 0 0">Ticked checklists all get the comment when you click Apply. Each one gets its own host name where the comment says Where.</p>`:''}
+  </div>
+
+  <div class="card">
+    <h3>1. Evidence <span class="sp"></span><span class="muted">Paste PowerShell, reg query, gpresult, auditpol or script output</span></h3>
+    ${multi?`<div class="row" style="margin:0 0 8px"><label class="muted" style="white-space:nowrap">This output is from</label>
+      <select id="evHost" style="width:auto">${g.items.map(v=>`<option value="${esc(v.ck.id)}" ${v.ck.id===w.evHost?'selected':''}>${esc(ckName(v.ck))}</option>`).join('')}</select></div>`:''}
     <textarea id="ev" class="ev" placeholder="Paste command output here…">${esc(w.evidence)}</textarea>
     <div class="row"><button class="primary" id="btnEval">Evaluate</button>
-      <label class="muted"><input type="checkbox" id="putDetails" style="width:auto" ${w.putDetails?'checked':''}> Save this output to Finding Details</label>
+      <label class="muted">Finding Details:</label>
+      <select id="detailsMode" style="width:auto">
+        <option value="evhost" ${w.detailsMode==='evhost'?'selected':''}>${multi?'Put this output on '+esc(ckName((S.cks.find(c=>c.id===w.evHost)||g.items[0].ck)))+' only':'Put this output in Finding Details'}</option>
+        ${multi?`<option value="all" ${w.detailsMode==='all'?'selected':''}>Put this output on every ticked checklist</option>`:''}
+        <option value="none" ${w.detailsMode==='none'?'selected':''}>Leave Finding Details alone</option>
+      </select>
       <span class="muted" style="margin-left:auto"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> evaluates</span></div>
   </div>
 
@@ -744,44 +859,73 @@ function renderDetail(){
     </div>
     <div class="card" style="position:sticky;top:0;align-self:start">
       <h3>${r?'4':'3'}. Comment <span class="sp"></span><span id="blankNote"></span></h3>
+      ${multi?`<p class="muted" style="margin:0 0 6px">Shown for <b>${esc(primaryHost(g,w)||'the first checklist')}</b>.</p>`:''}
       <textarea id="out" class="out"></textarea>
       <div class="row">
-        <button class="primary" id="btnApply">${S.ck.type==='manual'?'Mark done':'Apply to checklist'}</button>
+        <button class="primary" id="btnApply" ${nT?'':'disabled'}>Apply to ${nT===1?'1 checklist':nT+' checklists'}</button>
         <button id="btnCopy">Copy comment</button>
         <button id="btnRegen" title="Throw away hand edits in the box above">Rebuild from fields</button>
         <button id="btnNext" style="margin-left:auto">Next not reviewed →</button>
       </div>
-      <p class="muted" id="applyNote" style="margin-bottom:0">Sets status to <b>${STATUS_LABEL[tpl.status]}</b> and writes this comment to the rule.</p>
+      <p class="muted" style="margin-bottom:0">Sets status to <b>${STATUS_LABEL[tpl.status]}</b> and writes this comment on every ticked checklist.</p>
     </div>
   </div>`;
   updateOut();
 
+  const rerender=()=>{ renderDetail(); scheduleDraft(); };
+  D.querySelectorAll('.tgt').forEach(cb=>cb.addEventListener('change', e=>{
+    const id=e.target.dataset.ck; w.untargeted = w.untargeted||[];
+    if(e.target.checked){ if(!w.targets.includes(id)) w.targets.push(id); w.untargeted=w.untargeted.filter(x=>x!==id); }
+    else { w.targets=w.targets.filter(x=>x!==id); if(!w.untargeted.includes(id)) w.untargeted.push(id); }
+    rerender();
+  }));
+  if(multi){
+    $('tAll').addEventListener('click', ()=>{ w.targets=g.items.map(v=>v.ck.id); w.untargeted=[]; rerender(); });
+    $('tNone').addEventListener('click', ()=>{ w.targets=[]; w.untargeted=g.items.map(v=>v.ck.id); rerender(); });
+    $('evHost').addEventListener('change', e=>{ w.evHost=e.target.value; applyAuto(g, w, false); w.outManual=false; rerender(); });
+  }
+  D.querySelectorAll('.useCmt').forEach(b=>b.addEventListener('click', e=>{
+    const v=g.items.find(x=>x.ck.id===e.target.dataset.ck);
+    w.outManual=true; w.outText=v.comments; w.evHost=v.ck.id;
+    if(v.status!=='Not_Reviewed'){ const i=S.templates.findIndex(t=>t.status===v.status); if(i>=0 && S.templates[w.tpl].status!==v.status) w.tpl=tplForStatus(v.status); }
+    rerender(); toast(`Loaded the comment from ${ckName(v.ck)}. Change it, then Apply.`);
+  }));
   $('ev').addEventListener('input', e=>{ w.evidence=e.target.value; });
   $('ev').addEventListener('keydown', e=>{ if(e.key==='Enter' && (e.ctrlKey||e.metaKey)){ e.preventDefault(); $('btnEval').click(); }});
-  $('putDetails').addEventListener('change', e=>{ w.putDetails=e.target.checked; });
+  $('detailsMode').addEventListener('change', e=>{ w.detailsMode=e.target.value; });
   $('btnEval').addEventListener('click', ()=>{
-    w.evalRes = evaluate(v, w.evidence);
+    w.evalRes = evaluate(g, w.evidence);
     if(w.evalRes.suggest) w.tpl = tplForStatus(w.evalRes.suggest);
-    applyAuto(v, w, false); w.outManual=false; renderDetail();
+    applyAuto(g, w, false); w.outManual=false; rerender();
   });
-  $('tplSel').addEventListener('change', e=>{ w.tpl=Number(e.target.value); w.vals={}; applyAuto(v,w,true); w.outManual=false; renderDetail(); });
+  $('tplSel').addEventListener('change', e=>{ w.tpl=Number(e.target.value); w.vals={}; applyAuto(g,w,true); w.outManual=false; rerender(); });
   D.querySelectorAll('[data-key]').forEach(inp=>inp.addEventListener('input', e=>{
     w.vals[e.target.dataset.key] = {v:e.target.value, auto:false};
     e.target.closest('.fld').classList.remove('auto');
     if(!w.outManual) updateOut();
   }));
-  $('out').addEventListener('input', e=>{ w.outManual=true; w.outText=e.target.value; });
+  $('out').addEventListener('input', e=>{ w.outManual=true; w.outText=e.target.value; updateNote(e.target.value); });
   $('btnRegen').addEventListener('click', ()=>{ w.outManual=false; updateOut(); });
   $('btnCopy').addEventListener('click', ()=>copyText($('out').value));
-  $('btnApply').addEventListener('click', ()=>{
+  $('btnApply').addEventListener('click', async ()=>{
+    const targets = g.items.filter(v=>w.targets.includes(v.ck.id));
+    if(!targets.length) return;
     const text=$('out').value; const left=(text.match(/\[[^\]]+\]/g)||[]).length;
     if(left && !confirm(`${left} field(s) are still in [brackets]. Apply anyway?`)) return;
-    writeBack(v, tpl.status, text, (w.putDetails && w.evidence.trim()) ? w.evidence : null);
-    toast(`${v.vulnId} set to ${STATUS_LABEL[tpl.status]}`); renderList(); renderDetail();
+    const overwrite = targets.filter(v=>v.comments && v.comments.trim() && v.comments.trim()!==commentFor(g,w,tpl,v.ck).trim());
+    if(overwrite.length>1 && !confirm(`This replaces the existing comment on ${overwrite.length} checklists (${overwrite.map(v=>ckName(v.ck)).join(', ')}). Go ahead?`)) return;
+    const ev = w.evidence.trim() ? w.evidence : null;
+    targets.forEach(v=>{
+      const details = w.detailsMode==='all' ? ev : (w.detailsMode==='evhost' && v.ck.id===w.evHost) ? ev : null;
+      writeBack(v, tpl.status, commentFor(g, w, tpl, v.ck), details);
+    });
+    toast(`${g.vulnId} set to ${STATUS_LABEL[tpl.status]} on ${targets.length} checklist(s)`);
+    renderList(); renderDetail();
+    await autoSave([...new Set(targets.map(v=>v.ck))]);
   });
   $('btnNext').addEventListener('click', ()=>{
-    const all=S.ck.vulns; const i=all.findIndex(x=>x.key===v.key);
-    const n = all.slice(i+1).concat(all.slice(0,i)).find(x=>x.status==='Not_Reviewed');
+    const all=S.rules; const i=all.findIndex(x=>x.key===g.key);
+    const n = all.slice(i+1).concat(all.slice(0,i)).find(x=>x.items.some(v=>v.status==='Not_Reviewed'));
     if(!n){ toast('No Not Reviewed rules left'); return; }
     S.sel=n.key; renderList(); renderDetail();
     const el=document.querySelector('.item.sel'); if(el) el.scrollIntoView({block:'nearest'});
@@ -789,7 +933,9 @@ function renderDetail(){
   function updateOut(){
     const text = w.outManual ? w.outText : renderComment(tpl, w.vals);
     if(!w.outManual) w.outText=text;
-    $('out').value = text;
+    $('out').value = text; updateNote(text);
+  }
+  function updateNote(text){
     const left=(text.match(/\[[^\]]+\]/g)||[]).length;
     $('blankNote').innerHTML = left ? `<span class="warn">${left} field(s) still blank</span>` : `<span class="ok">All fields filled</span>`;
   }
@@ -802,56 +948,68 @@ function copyText(t){
     try{ document.execCommand('copy'); done(); }catch(e){ toast('Select the text and press Ctrl+C'); } ta.remove(); }
 }
 
-/* ---------------- Loading ---------------- */
-function loadText(text, name, handle){
-  try{
-    const isJson = /^\s*[\{\[]/.test(text);
-    S.ck = isJson ? parseCklb(text, name) : parseCkl(text, name);
-    S.work={}; S.dirty=false; S.handle=handle||null;
-    const restored = loadDrafts();
-    $('fileLabel').textContent = `${name}${S.ck.host?' · '+S.ck.host:''}`;
-    $('btnExport').disabled = false; setSaveState();
-    if(restored) toast(`Picked up your unfinished work on ${restored} rule(s)`);
-    const first = S.ck.vulns.find(v=>v.status==='Not_Reviewed') || S.ck.vulns[0];
-    S.sel = first.key; renderList(); renderDetail();
-  }catch(err){ alert(err.message); }
+/* ---------------- Loading (adds to what's already open) ---------------- */
+function addChecklist(text, name, handle){
+  const isJson = /^\s*[\{\[]/.test(text);
+  const ck = isJson ? parseCklb(text, name) : parseCkl(text, name);
+  ck.id = 'ck'+(++S.ckSeq); ck.handle = handle||null; ck.dirty=false;
+  ck.vulns.forEach(v=>{ v.ck=ck; });
+  const dup = S.cks.find(c=>c.fileName===ck.fileName && c.host===ck.host && c.type!=='manual');
+  if(dup) S.cks.splice(S.cks.indexOf(dup), 1, ck); else S.cks.push(ck);
+  return ck;
 }
-$('fileIn').addEventListener('change', e=>{
-  const f=e.target.files[0]; if(!f) return;
-  const rd=new FileReader(); rd.onload=()=>loadText(rd.result, f.name); rd.readAsText(f); e.target.value='';
+function afterLoad(added, errors){
+  rebuildRules(); setSaveState();
+  if(errors.length) alert(errors.join('\n'));
+  if(!added) return;
+  if(!curGroup()){ const first = S.rules.find(g=>g.items.some(v=>v.status==='Not_Reviewed')) || S.rules[0]; S.sel = first && first.key; }
+  renderList(); renderDetail();
+  toast(`Opened ${added} checklist(s)`);
+}
+$('fileIn').addEventListener('change', async e=>{
+  const files=[...e.target.files]; e.target.value=''; let added=0; const errors=[];
+  for(const f of files){ try{ addChecklist(await f.text(), f.name, null); added++; }catch(err){ errors.push(`${f.name}: ${err.message}`); } }
+  afterLoad(added, errors);
 });
 $('btnOpen').addEventListener('click', async ()=>{
-  if(S.dirty && !confirm('You have changes that are not saved to a checklist file. Open a new one anyway?')) return;
   if(!window.showOpenFilePicker){ $('fileIn').click(); return; }   // Firefox etc.: open without auto-save
-  let h;
+  let hs;
   try{
-    [h] = await window.showOpenFilePicker({types:[{description:'STIG checklist', accept:{'text/xml':['.ckl'], 'application/json':['.cklb']}}]});
+    hs = await window.showOpenFilePicker({multiple:true, types:[{description:'STIG checklists', accept:{'text/xml':['.ckl'], 'application/json':['.cklb']}}]});
   }catch(err){ if(err && err.name==='AbortError') return; $('fileIn').click(); return; }
-  let ok=false;
-  try{ ok = (await h.requestPermission({mode:'readwrite'})) === 'granted'; }catch(e){ ok=false; }
-  const f = await h.getFile();
-  loadText(await f.text(), f.name, ok ? h : null);
-  if(!ok) toast('Edit permission not given, so auto-save is off. Use Save checklist.');
+  let added=0, noPerm=0; const errors=[];
+  for(const h of hs){
+    let ok=false;
+    try{ ok = (await h.requestPermission({mode:'readwrite'})) === 'granted'; }catch(e){ ok=false; }
+    if(!ok) noPerm++;
+    try{ const f=await h.getFile(); addChecklist(await f.text(), f.name, ok?h:null); added++; }catch(err){ errors.push(`${h.name}: ${err.message}`); }
+  }
+  afterLoad(added, errors);
+  if(noPerm) toast(`${noPerm} file(s) opened without edit permission. Use Save checklists for those.`);
 });
-$('btnExport').addEventListener('click', exportChecklist);
+$('btnCloseAll').addEventListener('click', ()=>{
+  if(S.cks.some(c=>c.dirty) && !confirm('Some checklists have changes that are not saved. Close anyway?')) return;
+  S.cks=[]; S.rules=[]; S.work={}; S.sel=null; rebuildRules(); setSaveState(); renderList();
+  $('detail').innerHTML = '<div class="empty"><h2>Open checklists to start</h2><p>You can pick several at once.</p></div>';
+});
+$('btnExport').addEventListener('click', exportChecklists);
 $('detail').addEventListener('input', scheduleDraft);
 $('detail').addEventListener('change', scheduleDraft);
-$('detail').addEventListener('click', e=>{ if(e.target.closest('button')) scheduleDraft(); });
 ['q','fStatus','fCat'].forEach(id=>$(id).addEventListener('input', renderList));
-window.addEventListener('beforeunload', e=>{ if(S.dirty){ e.preventDefault(); e.returnValue=''; } });
+window.addEventListener('beforeunload', e=>{ if(S.cks.some(c=>c.dirty)){ e.preventDefault(); e.returnValue=''; } });
 
 /* ---------------- Manual rule ---------------- */
 $('btnManual').addEventListener('click', ()=>$('dlgManual').showModal());
 $('mCancel').addEventListener('click', ()=>$('dlgManual').close());
 $('mAdd').addEventListener('click', ()=>{
-  const vid=$('mVid').value.trim()||'V-?'; const host=$('mHost').value.trim();
-  if(!S.ck || S.ck.type!=='manual'){ S.ck={type:'manual', fileName:'', host, vulns:[]}; S.work={}; }
+  const vid=$('mVid').value.trim()||('V-pasted-'+Date.now()); const host=$('mHost').value.trim();
+  let ck = S.cks.find(c=>c.type==='manual' && c.host===host);
+  if(!ck){ ck={id:'ck'+(++S.ckSeq), type:'manual', fileName:'Pasted rules (copy the comment out)', host, vulns:[], handle:null, dirty:false}; S.cks.push(ck); }
   const v={key:'m|'+vid+'|'+Date.now(), vulnId:vid, ruleId:$('mRid').value.trim(), ruleVer:'', title:$('mTitle').value.trim(),
-    severity:$('mSev').value, check:$('mCheck').value, fix:$('mFix').value, status:'Not_Reviewed', comments:'', details:'', stig:'', host, ref:null, edited:false};
-  S.ck.vulns.push(v); S.sel=v.key;
-  $('fileLabel').textContent='Pasted rules (copy comments out; nothing to save)'; $('btnExport').disabled=true;
+    severity:$('mSev').value, check:$('mCheck').value, fix:$('mFix').value, status:'Not_Reviewed', comments:'', details:'', stig:'', ref:null, edited:false, ck};
+  ck.vulns.push(v); rebuildRules(); S.sel=vid;
   ['mVid','mTitle','mRid','mCheck','mFix'].forEach(id=>$(id).value='');
-  $('dlgManual').close(); renderList(); renderDetail();
+  $('dlgManual').close(); setSaveState(); renderList(); renderDetail();
 });
 
 /* ---------------- Profile ---------------- */
@@ -861,7 +1019,7 @@ $('pCancel').addEventListener('click', ()=>$('dlgProfile').close());
 $('pSave').addEventListener('click', ()=>{
   for(const [id,k] of Object.entries(PF)) S.profile[k]=$(id).value.trim();
   store.set('scw.profile', S.profile); $('dlgProfile').close();
-  const v=curVuln(); if(v){ applyAuto(v, getWork(v), false); getWork(v).outManual=false; renderDetail(); }
+  const g=curGroup(); if(g){ applyAuto(g, getWork(g), false); getWork(g).outManual=false; renderDetail(); }
   toast('Saved');
 });
 
@@ -875,8 +1033,8 @@ $('tplSave').addEventListener('click', ()=>{
   if(!t.length){ alert('No templates found. Check the format.'); return; }
   S.tplText=$('tplText').value; S.templates=t; store.set('scw.templates', S.tplText);
   Object.values(S.work).forEach(w=>{ if(w.tpl>=t.length) w.tpl=0; w.vals={}; w.outManual=false; });
-  if(S.ck) S.ck.vulns.forEach(v=>{ if(S.work[v.key]) applyAuto(v, S.work[v.key], true); });
-  $('dlgTemplates').close(); if(curVuln()) renderDetail(); toast(`${t.length} templates saved`);
+  S.rules.forEach(g=>{ if(S.work[g.key]) applyAuto(g, S.work[g.key], true); });
+  $('dlgTemplates').close(); if(curGroup()) renderDetail(); toast(`${t.length} templates saved`);
 });
 
 if(!S.profile.name) setTimeout(()=>toast('Tip: set My info first so names fill in'), 600);

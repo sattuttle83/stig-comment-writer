@@ -1,12 +1,12 @@
 # Changelog
 
 All notable changes to STIG Comment Writer are recorded here.
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/):
-MAJOR for changes that break existing checklists or templates, MINOR for new features, PATCH for fixes.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versions stay in the 1.3 series: each release bumps the last number (1.3.2, 1.3.3, …).
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-11-20
+## [1.3.2] - 2026-11-20
 ### Added
 - **Open folder**: pick an Evaluate-STIG output folder and the app finds every .ckl/.cklb under it, for every server.
 - Checklist picker: tick by STIG (every server's copy at once) or by server, filter by server, STIG, SQL instance or database name, with Tick all / Untick all for what's shown.
@@ -63,8 +63,8 @@ MAJOR for changes that break existing checklists or templates, MINOR for new fea
 - Template editor with .txt import.
 - Apply sets status, comment and Finding Details; Save checklist exports the updated file.
 
-[Unreleased]: ../../compare/v1.4.0...HEAD
-[1.4.0]: ../../compare/v1.3.1...v1.4.0
+[Unreleased]: ../../compare/v1.3.2...HEAD
+[1.3.2]: ../../compare/v1.3.1...v1.3.2
 [1.3.1]: ../../compare/v1.3.0...v1.3.1
 [1.3.0]: ../../compare/v1.2.0...v1.3.0
 [1.2.0]: ../../compare/v1.1.0...v1.2.0

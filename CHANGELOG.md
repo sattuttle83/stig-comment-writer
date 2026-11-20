@@ -6,6 +6,11 @@ MAJOR for changes that break existing checklists or templates, MINOR for new fea
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-20
+### Changed
+- The app file is now named with its version (`stig-comment-writer-v1.3.1.html`), so a downloaded copy shows which version it is.
+- README release steps include renaming the file for each new version.
+
 ## [1.3.0] - 2026-11-20
 ### Added
 - **Copy from baseline**: copy status and comments from one baseline checklist to any number of other open checklists, matched by Vuln ID.
@@ -46,7 +51,8 @@ MAJOR for changes that break existing checklists or templates, MINOR for new fea
 - Template editor with .txt import.
 - Apply sets status, comment and Finding Details; Save checklist exports the updated file.
 
-[Unreleased]: ../../compare/v1.3.0...HEAD
+[Unreleased]: ../../compare/v1.3.1...HEAD
+[1.3.1]: ../../compare/v1.3.0...v1.3.1
 [1.3.0]: ../../compare/v1.2.0...v1.3.0
 [1.2.0]: ../../compare/v1.1.0...v1.2.0
 [1.1.0]: ../../releases/tag/v1.1.0

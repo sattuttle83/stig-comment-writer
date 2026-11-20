@@ -86,6 +86,18 @@ ul.reasons li{margin:2px 0}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media (max-width:1100px){.grid2{grid-template-columns:1fr}}
 dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:18px;width:min(760px,94vw)}
+dialog.wide{width:min(1100px,96vw)}
+.scangrid{display:grid;grid-template-columns:minmax(260px,1fr) 2fr;gap:12px}
+@media (max-width:900px){.scangrid{grid-template-columns:1fr}}
+.scanhead{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px}
+.scanhead .sp{flex:1}.scanhead button{padding:3px 8px;font-size:12px}
+.scanbox{border:1px solid var(--line);border-radius:6px;height:52vh;overflow:auto;padding:4px 0}
+.srow{display:flex;align-items:center;gap:8px;padding:4px 10px;font-size:13px;cursor:pointer}
+.srow:hover{background:var(--soft)} .srow > span:first-of-type{flex:1}
+.srow.sv{background:var(--bg);border-top:1px solid var(--line);position:sticky;top:0}
+.srv:first-child .srow.sv{border-top:0}
+.srow.fl{padding-left:30px}
+.tgtname{color:var(--accent);font-size:12px}
 dialog::backdrop{background:rgba(0,0,0,.4)}
 dialog h2{margin:0 0 12px;font-size:16px}
 dialog .g{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -100,9 +112,10 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
 <body>
 <header>
   <h1>STIG Comment Writer <span class="muted" id="appVer" style="font-weight:400;font-size:12px"></span></h1>
-  <button id="btnOpen">Open checklists (.ckl / .cklb)</button><input type="file" id="fileIn" accept=".ckl,.cklb,.json,.xml" multiple hidden>
+  <button id="btnFolder" class="primary">Open folder</button><input type="file" id="dirIn" webkitdirectory multiple hidden>
+  <button id="btnOpen">Open files</button><input type="file" id="fileIn" accept=".ckl,.cklb,.json,.xml" multiple hidden>
   <button id="btnManual">Paste a single rule</button>
-  <button id="btnExport" class="primary" disabled>Save checklists</button>
+  <button id="btnExport" disabled>Save checklists</button>
   <button id="btnCloseAll" hidden>Close all</button>
   <button id="btnBaseline" hidden>Copy from baseline</button>
   <button id="btnProfile">My info</button>
@@ -135,7 +148,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
   <section id="detail">
     <div class="empty">
       <h2>Open checklists to start</h2>
-      <p>Pick one or several at once (Ctrl+click), for example the same STIG on every host. Load a <b>.ckl</b> (STIG Viewer 2) or <b>.cklb</b> (STIG Viewer 3 / STIG Manager export). Pick a rule, paste your command output, and press <b>Evaluate</b>. The app checks the output against the rule's check text, suggests a status, and fills in your comment template.</p>
+      <p><b>Open folder</b> and pick your Evaluate-STIG output folder: it finds every single checklist for every server and lets you tick them by server or by STIG. <b>Open files</b> picks individual files. Load a <b>.ckl</b> (STIG Viewer 2) or <b>.cklb</b> (STIG Viewer 3 / STIG Manager export). Pick a rule, paste your command output, and press <b>Evaluate</b>. The app checks the output against the rule's check text, suggests a status, and fills in your comment template.</p>
       <p>No checklist handy? Use <b>Paste a single rule</b>.</p>
       <p>Set <b>My info</b> once (name, role, team, ISSO). It's saved in this browser and fills the Who and Last Updated lines.</p>
       <p class="muted">Runs fully offline. Nothing leaves this page.</p>
@@ -186,6 +199,28 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
   <div class="dlgbtns"><button id="mCancel">Cancel</button><button class="primary" id="mAdd">Add rule</button></div>
 </dialog>
 
+<dialog id="dlgScan" class="wide">
+  <h2>Choose checklists <span class="muted" id="scanFrom" style="font-weight:400;font-size:13px"></span></h2>
+  <div class="row" style="margin:0 0 10px">
+    <input id="scanQ" placeholder="Filter by server, STIG, instance or file name…" style="flex:1">
+    <label class="muted" style="white-space:nowrap"><input type="checkbox" id="scanPrev" style="width:auto"> Include older scans (Previous folders)</label>
+  </div>
+  <div class="scangrid">
+    <div>
+      <div class="scanhead">By STIG <span class="muted">tick to select every server's copy</span></div>
+      <div id="scanStigs" class="scanbox"></div>
+    </div>
+    <div>
+      <div class="scanhead">By server <span class="sp"></span><button id="scanAll">Tick all shown</button><button id="scanNone">Untick all shown</button></div>
+      <div id="scanTree" class="scanbox"></div>
+    </div>
+  </div>
+  <div class="dlgbtns">
+    <span id="scanCount" class="muted" style="margin-right:auto;align-self:center"></span>
+    <button id="scanCancel">Cancel</button><button class="primary" id="scanGo">Open</button>
+  </div>
+</dialog>
+
 <dialog id="dlgBase">
   <h2>Copy from a baseline checklist</h2>
   <p class="muted" style="margin-top:0">Copies status and comments from the baseline to the other checklists, matched by Vuln ID. Rules the baseline hasn't reviewed are skipped.</p>
@@ -197,7 +232,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
         <label class="muted"><input type="checkbox" id="bStatus" checked style="width:auto"> Status</label>
         <label class="muted"><input type="checkbox" id="bComments" checked style="width:auto"> Comments</label>
         <label class="muted"><input type="checkbox" id="bDetails" style="width:auto"> Finding Details (usually host-specific, so off by default)</label>
-        <label class="muted"><input type="checkbox" id="bHost" checked style="width:auto"> Swap the baseline's host name for each target's host name in the text</label>
+        <label class="muted"><input type="checkbox" id="bHost" checked style="width:auto"> Swap the baseline's host, SQL instance and database names for each target's in the text</label>
       </div></div>
     <div class="full"><label>Which rules</label>
       <div style="display:grid;gap:4px;margin-top:4px">
@@ -214,7 +249,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
 
 <script>
 "use strict";
-const APP_VERSION = '1.3.1';   // keep in step with CHANGELOG.md and the file name
+const APP_VERSION = '1.4.0';   // keep in step with CHANGELOG.md and the file name
 /* ---------------- Default templates (user's file + one added) ---------------- */
 const DEFAULT_TEMPLATES = `Open finding (remediation deferred)
 
@@ -397,7 +432,9 @@ function parseCkl(text, fileName){
     });
   });
   if(!vulns.length) throw new Error('No rules (VULN entries) found in this .ckl.');
-  return {type:'ckl', fileName, doc, host, vulns};
+  const site=(doc.querySelector('ASSET > WEB_DB_SITE')||{}).textContent||'', inst=(doc.querySelector('ASSET > WEB_DB_INSTANCE')||{}).textContent||'';
+  const stigs=[...new Set(vulns.map(v=>v.stig).filter(Boolean))];
+  return {type:'ckl', fileName, doc, host, vulns, site:site.trim(), inst:inst.trim(), stigs};
 }
 function parseCklb(text, fileName){
   let j; try{ j=JSON.parse(text); }catch(e){ throw new Error('This .cklb is not valid JSON.'); }
@@ -414,7 +451,9 @@ function parseCklb(text, fileName){
     });
   });
   if(!vulns.length) throw new Error('No rules found in this .cklb.');
-  return {type:'cklb', fileName, json:j, host, vulns};
+  const td=j.target_data||{};
+  const stigs=(j.stigs||[]).map(st=>st.display_name||st.stig_name).filter(Boolean);
+  return {type:'cklb', fileName, json:j, host, vulns, site:String(td.web_db_site||'').trim(), inst:String(td.web_db_instance||'').trim(), stigs};
 }
 
 function writeBack(v, status, comment, details){
@@ -753,7 +792,7 @@ function getWork(g){
 }
 function primaryHost(g, w){
   const ck = S.cks.find(c=>c.id===w.evHost) || g.items[0].ck;
-  return ck.host || '';
+  return ckWhere(ck);
 }
 function filtered(){
   const q=$('q').value.trim().toLowerCase(), fs=$('fStatus').value, fc=$('fCat').value;
@@ -786,7 +825,8 @@ function renderFiles(){
   const real=S.cks;
   $('fileLabel').innerHTML = !real.length ? 'No checklist loaded'
     : real.length===1 ? esc(real[0].fileName + (real[0].host?' · '+real[0].host:''))
-    : `${real.length} checklists open <span class="muted">(${esc(real.map(c=>c.host||c.fileName).join(', '))})</span>`;
+    : (()=>{ const sv=[...new Set(real.map(c=>c.host||c.fileName))];
+        return `${real.length} checklists on ${sv.length} server(s) <span class="muted">(${esc(sv.slice(0,6).join(', '))}${sv.length>6?', …':''})</span>`; })();
   $('btnCloseAll').hidden = !real.length;
   $('btnBaseline').hidden = real.filter(c=>c.type!=='manual').length < 2;
 }
@@ -796,18 +836,22 @@ $('list').addEventListener('click', e=>{
 });
 
 function curGroup(){ return S.rules.find(g=>g.key===S.sel); }
-const ckName = ck => ck.host || ck.fileName;
+// "SQL01 · INST1 / AppDB" for SQL instance/database checklists, plain host otherwise
+const ckTarget = ck => [ck.inst, ck.site].filter(Boolean).join(' / ');
+const ckName = ck => [ck.host || ck.fileName, ckTarget(ck)].filter(Boolean).join(' · ');
+const ckWhere = ck => (ck.host||'') + (ckTarget(ck) ? ` (${ckTarget(ck)})` : '');
 
 // The comment for one checklist: host-specific fields that were filled in for you get that checklist's host.
 function commentFor(g, w, tpl, ck){
   if(w.outManual){
     const ph = primaryHost(g, w);
-    return (ph && ck.host && ph!==ck.host) ? w.outText.split(ph).join(ck.host) : w.outText;
+    const to = ckWhere(ck);
+    return (ph && to && ph!==to) ? w.outText.split(ph).join(to) : w.outText;
   }
   const vals={};
   templateFields(tpl).forEach(f=>{
     const cur=w.vals[f.key];
-    vals[f.key] = (cur && cur.auto) ? {v:autoValue(f, tpl, g, w, ck.host), auto:true} : cur;
+    vals[f.key] = (cur && cur.auto) ? {v:autoValue(f, tpl, g, w, ckWhere(ck)), auto:true} : cur;
   });
   return renderComment(tpl, vals);
 }
@@ -834,7 +878,7 @@ function renderDetail(){
     <table class="targets"><tr><th style="width:34px">Apply</th><th>Host</th><th>Status</th><th>Current comment</th><th></th></tr>
     ${g.items.map(v=>{ const on=w.targets.includes(v.ck.id); return `<tr>
       <td><input type="checkbox" class="tgt" data-ck="${esc(v.ck.id)}" ${on?'checked':''} style="width:auto"></td>
-      <td><b>${esc(ckName(v.ck))}</b><div class="muted">${esc(v.ck.fileName)}</div></td>
+      <td><b>${esc(ckName(v.ck))}</b><div class="muted">${esc((v.ck.stigs||[]).join(', ') || v.ck.fileName)}</div></td>
       <td><span class="pill s-${v.status}">${STATUS_LABEL[v.status]}</span>${v.edited?' <span class="edited">●</span>':''}</td>
       <td>${v.comments?`<details class="cmt"><summary>${esc(v.comments.split('\n')[0].slice(0,90))}</summary><pre>${esc(v.comments)}</pre></details>`:'<span class="muted">None</span>'}</td>
       <td>${v.comments?`<button class="useCmt" data-ck="${esc(v.ck.id)}" title="Put this comment in the comment box so you can change it">Edit this one</button>`:''}</td>
@@ -976,12 +1020,16 @@ function copyText(t){
 }
 
 /* ---------------- Loading (adds to what's already open) ---------------- */
-function addChecklist(text, name, handle){
-  const isJson = /^\s*[\{\[]/.test(text);
-  const ck = isJson ? parseCklb(text, name) : parseCkl(text, name);
-  ck.id = 'ck'+(++S.ckSeq); ck.handle = handle||null; ck.dirty=false;
+function parseAny(text, name){
+  return /^\s*[\{\[]/.test(text) ? parseCklb(text, name) : parseCkl(text, name);
+}
+function addChecklist(text, name, handle, path){
+  return addParsed(parseAny(text, name), handle, path);
+}
+function addParsed(ck, handle, path){
+  ck.id = 'ck'+(++S.ckSeq); ck.handle = handle||null; ck.dirty=false; ck.path = path || ck.fileName;
   ck.vulns.forEach(v=>{ v.ck=ck; });
-  const dup = S.cks.find(c=>c.fileName===ck.fileName && c.host===ck.host && c.type!=='manual');
+  const dup = S.cks.find(c=>c.type!=='manual' && c.path===ck.path);
   if(dup) S.cks.splice(S.cks.indexOf(dup), 1, ck); else S.cks.push(ck);
   return ck;
 }
@@ -1025,6 +1073,119 @@ $('detail').addEventListener('change', scheduleDraft);
 ['q','fStatus','fCat'].forEach(id=>$(id).addEventListener('input', renderList));
 window.addEventListener('beforeunload', e=>{ if(S.cks.some(c=>c.dirty)){ e.preventDefault(); e.returnValue=''; } });
 
+/* ---------------- Open folder: find every checklist under a folder, pick by server or STIG ---------------- */
+const SCAN = {items:[], sel:new Set(), dir:null, open:new Set()};
+// Evaluate-STIG keeps older results in folders named "Previous"
+const isPrevPath = p => /(^|\/)previous(\/|$)/i.test(p);
+const isCombined = it => /combined/i.test(it.name) || it.ck.stigs.length > 1;
+
+async function collectFromDir(dirHandle, path, out){
+  for await (const [name, h] of dirHandle.entries()){
+    if(h.kind==='directory') await collectFromDir(h, path+name+'/', out);
+    else if(/\.(ckl|cklb)$/i.test(name)) out.push({name, path:path+name, handle:h});
+  }
+}
+async function buildScan(entries, dirName){
+  SCAN.items=[]; SCAN.sel=new Set(); const errors=[];
+  for(const e of entries){
+    try{
+      const file = e.file || await e.handle.getFile();
+      const ck = parseAny(await file.text(), e.name);
+      const top = e.path.split('/')[0];
+      SCAN.items.push({id:'s'+SCAN.items.length, name:e.name, path:e.path, handle:e.handle||null, ck,
+                       server:(ck.host || top || '(no host)').toUpperCase(), prev:isPrevPath(e.path)});
+    }catch(err){ errors.push(`${e.path}: ${err.message}`); }
+  }
+  // default: every current single-STIG checklist that isn't already open
+  const openPaths = new Set(S.cks.map(c=>c.path));
+  SCAN.items.forEach(it=>{ if(!it.prev && !isCombined(it) && !openPaths.has(it.path)) SCAN.sel.add(it.id); });
+  $('scanFrom').textContent = `· ${dirName} · ${SCAN.items.length} checklist(s) found`;
+  $('scanQ').value=''; $('scanPrev').checked=false;
+  renderScan();
+  if(errors.length) toast(`${errors.length} file(s) could not be read`);
+  $('dlgScan').showModal();
+}
+function scanShown(){
+  const q=$('scanQ').value.trim().toLowerCase(), prev=$('scanPrev').checked;
+  return SCAN.items.filter(it=>(prev || !it.prev) &&
+    (!q || [it.server, it.name, it.path, ckTarget(it.ck), ...it.ck.stigs].join(' ').toLowerCase().includes(q)));
+}
+function renderScan(){
+  const shown=scanShown();
+  // STIG list with counts
+  const byStig=new Map();
+  shown.filter(it=>!isCombined(it)).forEach(it=>it.ck.stigs.forEach(t=>{ if(!byStig.has(t)) byStig.set(t,[]); byStig.get(t).push(it); }));
+  const stigRows=[...byStig.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+  $('scanStigs').innerHTML = stigRows.map(([t,its])=>{
+    const n=its.filter(i=>SCAN.sel.has(i.id)).length;
+    return `<label class="srow"><input type="checkbox" class="sStig" data-t="${esc(t)}" ${n===its.length?'checked':''} ${n&&n<its.length?'data-mixed="1"':''} style="width:auto">
+      <span>${esc(t)}</span><span class="muted">${n}/${its.length}</span></label>`;
+  }).join('') || '<div class="muted">No checklists match.</div>';
+  // server tree
+  const bySrv=new Map();
+  shown.forEach(it=>{ if(!bySrv.has(it.server)) bySrv.set(it.server,[]); bySrv.get(it.server).push(it); });
+  $('scanTree').innerHTML = [...bySrv.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([srv,its])=>{
+    const n=its.filter(i=>SCAN.sel.has(i.id)).length;
+    return `<div class="srv">
+      <label class="srow sv"><input type="checkbox" class="sSrv" data-s="${esc(srv)}" ${n===its.length?'checked':''} ${n&&n<its.length?'data-mixed="1"':''} style="width:auto">
+        <b>${esc(srv)}</b><span class="muted">${n}/${its.length}</span></label>
+      ${its.map(it=>`<label class="srow fl" title="${esc(it.path)}"><input type="checkbox" class="sFile" data-id="${it.id}" ${SCAN.sel.has(it.id)?'checked':''} style="width:auto">
+        <span>${esc(it.ck.stigs.join(', ') || it.name)}${ckTarget(it.ck)?` <span class="tgtname">${esc(ckTarget(it.ck))}</span>`:''}
+        ${isCombined(it)?' <span class="pill s-Not_Reviewed">combined</span>':''}${it.prev?' <span class="pill s-Not_Applicable">older scan</span>':''}
+        ${S.cks.some(c=>c.path===it.path)?' <span class="pill s-NotAFinding">open</span>':''}</span>
+        <span class="muted">${it.ck.vulns.length} rules</span></label>`).join('')}
+    </div>`;
+  }).join('');
+  document.querySelectorAll('#dlgScan [data-mixed]').forEach(cb=>cb.indeterminate=true);
+  const c=SCAN.sel.size, servers=new Set(SCAN.items.filter(i=>SCAN.sel.has(i.id)).map(i=>i.server)).size;
+  $('scanCount').textContent = `${c} checklist(s) selected on ${servers} server(s)`;
+  $('scanGo').textContent = c ? `Open ${c} checklist(s)` : 'Open';
+  $('scanGo').disabled = !c;
+}
+$('dlgScan').addEventListener('change', e=>{
+  const t=e.target; const shown=scanShown();
+  const setMany=(its,on)=>its.forEach(i=>on?SCAN.sel.add(i.id):SCAN.sel.delete(i.id));
+  if(t.classList.contains('sFile')) setMany(SCAN.items.filter(i=>i.id===t.dataset.id), t.checked);
+  else if(t.classList.contains('sSrv')) setMany(shown.filter(i=>i.server===t.dataset.s), t.checked);
+  else if(t.classList.contains('sStig')) setMany(shown.filter(i=>!isCombined(i) && i.ck.stigs.includes(t.dataset.t)), t.checked);
+  renderScan();
+});
+$('scanQ').addEventListener('input', renderScan);
+$('scanAll').addEventListener('click', ()=>{ scanShown().forEach(i=>SCAN.sel.add(i.id)); renderScan(); });
+$('scanNone').addEventListener('click', ()=>{ scanShown().forEach(i=>SCAN.sel.delete(i.id)); renderScan(); });
+$('scanCancel').addEventListener('click', ()=>$('dlgScan').close());
+$('scanGo').addEventListener('click', ()=>{
+  const picked=SCAN.items.filter(i=>SCAN.sel.has(i.id));
+  picked.forEach(it=>addParsed(it.ck, SCAN.dirWritable ? it.handle : null, it.path));
+  // parsed objects now belong to the session; parse fresh next scan
+  SCAN.items=[]; SCAN.sel=new Set();
+  $('dlgScan').close();
+  afterLoad(picked.length, []);
+  if(!SCAN.dirWritable) toast(`Opened ${picked.length} checklist(s). Auto-save is off; use Save checklists.`);
+});
+$('btnFolder').addEventListener('click', async ()=>{
+  if(!window.showDirectoryPicker){ $('dirIn').click(); return; }   // Firefox: read-only folder pick
+  let dir;
+  try{ dir = await window.showDirectoryPicker({mode:'readwrite', id:'stigOutput'}); }
+  catch(err){ if(err && err.name==='AbortError') return;
+    try{ dir = await window.showDirectoryPicker({mode:'read'}); }catch(e2){ $('dirIn').click(); return; } }
+  let writable=false;
+  try{ writable = (await dir.queryPermission({mode:'readwrite'}))==='granted' || (await dir.requestPermission({mode:'readwrite'}))==='granted'; }catch(e){}
+  SCAN.dirWritable = writable;
+  toast('Looking for checklists…');
+  const entries=[]; await collectFromDir(dir, '', entries);
+  if(!entries.length){ alert('No .ckl or .cklb files found in that folder.'); return; }
+  await buildScan(entries, dir.name);
+});
+$('dirIn').addEventListener('change', async e=>{
+  const files=[...e.target.files].filter(f=>/\.(ckl|cklb)$/i.test(f.name)); e.target.value='';
+  if(!files.length){ alert('No .ckl or .cklb files found in that folder.'); return; }
+  SCAN.dirWritable=false;
+  const entries = files.map(f=>({name:f.name, path:(f.webkitRelativePath||f.name).split('/').slice(1).join('/')||f.name, file:f}));
+  await buildScan(entries, (files[0].webkitRelativePath||'').split('/')[0] || 'folder');
+});
+$('scanPrev').addEventListener('change', renderScan);
+
 /* ---------------- Copy from baseline ---------------- */
 function basePlan(){
   const src = S.cks.find(c=>c.id===$('bSrc').value); if(!src) return {jobs:[], src:null};
@@ -1047,6 +1208,12 @@ function basePlan(){
   return {src, jobs, per, o};
 }
 function swapHost(text, from, to){ return (from && to && from!==to) ? text.split(from).join(to) : text; }
+function swapNames(text, src, dst){
+  let t = swapHost(text, src.host, dst.host);
+  t = swapHost(t, src.site, dst.site);
+  t = swapHost(t, src.inst, dst.inst);
+  return t;
+}
 function renderBasePreview(){
   const {src, jobs, per, o} = basePlan();
   if(!src){ $('bPreview').textContent=''; return; }
@@ -1069,10 +1236,13 @@ $('btnBaseline').addEventListener('click', ()=>{
   const guess = real.find(c=>c.id===S.lastBase)
     || real.find(c=>/base/i.test(c.fileName+' '+c.host))
     || real.slice().sort((a,b)=>reviewed(b)-reviewed(a))[0];
-  $('bSrc').innerHTML = real.map(c=>`<option value="${esc(c.id)}" ${c===guess?'selected':''}>${esc(ckName(c))} · ${esc(c.fileName)} (${reviewed(c)} of ${c.vulns.length} reviewed)</option>`).join('');
+  $('bSrc').innerHTML = real.map(c=>`<option value="${esc(c.id)}" ${c===guess?'selected':''}>${esc(ckName(c))} · ${esc((c.stigs||[]).join(', ')||c.fileName)} (${reviewed(c)} of ${c.vulns.length} reviewed)</option>`).join('');
   const fillDst = ()=>{
     const sid=$('bSrc').value;
-    $('bDst').innerHTML = real.filter(c=>c.id!==sid).map(c=>`<label class="muted"><input type="checkbox" value="${esc(c.id)}" checked style="width:auto"> ${esc(ckName(c))} · ${esc(c.fileName)}</label>`).join('');
+    const src = real.find(c=>c.id===sid); const same = c => (c.stigs||[]).some(t=>(src.stigs||[]).includes(t));
+    const others = real.filter(c=>c.id!==sid).sort((a,b)=>same(b)-same(a));
+    $('bDst').innerHTML = others.map(c=>`<label class="muted"><input type="checkbox" value="${esc(c.id)}" ${same(c)?'checked':''} style="width:auto"> ${esc(ckName(c))} · ${esc((c.stigs||[]).join(', ')||c.fileName)}</label>`).join('')
+      + (others.some(c=>!same(c)) ? '<div class="muted" style="font-size:12px">Checklists of a different STIG start unticked.</div>' : '');
     renderBasePreview();
   };
   $('bSrc').onchange = fillDst; fillDst();
@@ -1085,9 +1255,8 @@ $('bGo').addEventListener('click', async ()=>{
   S.lastBase = src.id;
   const touched = new Set();
   jobs.forEach(({b, v})=>{
-    const to = v.ck.host, from = src.host;
-    const comment = o.comments ? (o.host ? swapHost(b.comments, from, to) : b.comments) : v.comments;
-    const details = o.details ? (o.host ? swapHost(b.details, from, to) : b.details) : null;
+    const comment = o.comments ? (o.host ? swapNames(b.comments, src, v.ck) : b.comments) : v.comments;
+    const details = o.details ? (o.host ? swapNames(b.details, src, v.ck) : b.details) : null;
     writeBack(v, o.status ? b.status : v.status, comment, details);
     touched.add(v.ck);
   });

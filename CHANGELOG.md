@@ -6,6 +6,18 @@ MAJOR for changes that break existing checklists or templates, MINOR for new fea
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-20
+### Added
+- **Open folder**: pick an Evaluate-STIG output folder and the app finds every .ckl/.cklb under it, for every server.
+- Checklist picker: tick by STIG (every server's copy at once) or by server, filter by server, STIG, SQL instance or database name, with Tick all / Untick all for what's shown.
+- Single checklists are selected by default. Combined checklists are shown but left unticked and kept out of the by-STIG list. Older scans in `Previous` folders are hidden unless you ask for them.
+- SQL Server Instance and Database checklists show their instance and database name everywhere (picker, checklist table, baseline dialog), and the Where field uses host plus instance/database.
+- Opening a folder with edit access lets every checklist in it auto-save.
+### Changed
+- Copy from baseline also swaps the SQL instance and database names, and only pre-ticks checklists of the same STIG as the baseline.
+- Header shows how many servers are open instead of repeating host names.
+- "Open checklists" is now "Open files"; "Open folder" is the main way in.
+
 ## [1.3.1] - 2026-11-20
 ### Changed
 - The app file is now named with its version (`stig-comment-writer-v1.3.1.html`), so a downloaded copy shows which version it is.
@@ -51,7 +63,8 @@ MAJOR for changes that break existing checklists or templates, MINOR for new fea
 - Template editor with .txt import.
 - Apply sets status, comment and Finding Details; Save checklist exports the updated file.
 
-[Unreleased]: ../../compare/v1.3.1...HEAD
+[Unreleased]: ../../compare/v1.4.0...HEAD
+[1.4.0]: ../../compare/v1.3.1...v1.4.0
 [1.3.1]: ../../compare/v1.3.0...v1.3.1
 [1.3.0]: ../../compare/v1.2.0...v1.3.0
 [1.2.0]: ../../compare/v1.1.0...v1.2.0

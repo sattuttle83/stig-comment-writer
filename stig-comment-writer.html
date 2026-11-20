@@ -99,11 +99,12 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
 </head>
 <body>
 <header>
-  <h1>STIG Comment Writer</h1>
+  <h1>STIG Comment Writer <span class="muted" id="appVer" style="font-weight:400;font-size:12px"></span></h1>
   <button id="btnOpen">Open checklists (.ckl / .cklb)</button><input type="file" id="fileIn" accept=".ckl,.cklb,.json,.xml" multiple hidden>
   <button id="btnManual">Paste a single rule</button>
   <button id="btnExport" class="primary" disabled>Save checklists</button>
   <button id="btnCloseAll" hidden>Close all</button>
+  <button id="btnBaseline" hidden>Copy from baseline</button>
   <button id="btnProfile">My info</button>
   <button id="btnTemplates">Templates</button>
   <span class="file"><span id="fileLabel">No checklist loaded</span> <span id="saveState" class="muted"></span></span>
@@ -185,10 +186,35 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
   <div class="dlgbtns"><button id="mCancel">Cancel</button><button class="primary" id="mAdd">Add rule</button></div>
 </dialog>
 
+<dialog id="dlgBase">
+  <h2>Copy from a baseline checklist</h2>
+  <p class="muted" style="margin-top:0">Copies status and comments from the baseline to the other checklists, matched by Vuln ID. Rules the baseline hasn't reviewed are skipped.</p>
+  <div class="g">
+    <div class="full"><label>Baseline (copy from)</label><select id="bSrc"></select></div>
+    <div class="full"><label>Copy to</label><div id="bDst" style="display:grid;gap:4px;margin-top:4px"></div></div>
+    <div class="full"><label>What to copy</label>
+      <div style="display:grid;gap:4px;margin-top:4px">
+        <label class="muted"><input type="checkbox" id="bStatus" checked style="width:auto"> Status</label>
+        <label class="muted"><input type="checkbox" id="bComments" checked style="width:auto"> Comments</label>
+        <label class="muted"><input type="checkbox" id="bDetails" style="width:auto"> Finding Details (usually host-specific, so off by default)</label>
+        <label class="muted"><input type="checkbox" id="bHost" checked style="width:auto"> Swap the baseline's host name for each target's host name in the text</label>
+      </div></div>
+    <div class="full"><label>Which rules</label>
+      <div style="display:grid;gap:4px;margin-top:4px">
+        <label class="muted"><input type="radio" name="bWhich" value="nr" checked style="width:auto"> Only rules still Not Reviewed on the target (keeps work already done)</label>
+        <label class="muted"><input type="radio" name="bWhich" value="empty" style="width:auto"> Rules with no comment yet on the target</label>
+        <label class="muted"><input type="radio" name="bWhich" value="all" style="width:auto"> Every matching rule (overwrites what's there)</label>
+      </div></div>
+    <div class="full"><div id="bPreview" class="muted" style="padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px"></div></div>
+  </div>
+  <div class="dlgbtns"><button id="bCancel">Cancel</button><button class="primary" id="bGo">Copy</button></div>
+</dialog>
+
 <div id="toast"></div>
 
 <script>
 "use strict";
+const APP_VERSION = '1.3.0';   // keep in step with CHANGELOG.md
 /* ---------------- Default templates (user's file + one added) ---------------- */
 const DEFAULT_TEMPLATES = `Open finding (remediation deferred)
 
@@ -762,6 +788,7 @@ function renderFiles(){
     : real.length===1 ? esc(real[0].fileName + (real[0].host?' · '+real[0].host:''))
     : `${real.length} checklists open <span class="muted">(${esc(real.map(c=>c.host||c.fileName).join(', '))})</span>`;
   $('btnCloseAll').hidden = !real.length;
+  $('btnBaseline').hidden = real.filter(c=>c.type!=='manual').length < 2;
 }
 $('list').addEventListener('click', e=>{
   const it=e.target.closest('.item[data-k]'); if(!it) return;
@@ -998,6 +1025,82 @@ $('detail').addEventListener('change', scheduleDraft);
 ['q','fStatus','fCat'].forEach(id=>$(id).addEventListener('input', renderList));
 window.addEventListener('beforeunload', e=>{ if(S.cks.some(c=>c.dirty)){ e.preventDefault(); e.returnValue=''; } });
 
+/* ---------------- Copy from baseline ---------------- */
+function basePlan(){
+  const src = S.cks.find(c=>c.id===$('bSrc').value); if(!src) return {jobs:[], src:null};
+  const dstIds = [...document.querySelectorAll('#bDst input:checked')].map(i=>i.value);
+  const which = (document.querySelector('input[name=bWhich]:checked')||{}).value || 'nr';
+  const o = {status:$('bStatus').checked, comments:$('bComments').checked, details:$('bDetails').checked, host:$('bHost').checked};
+  const byId = new Map(); src.vulns.forEach(v=>{ if(v.vulnId) byId.set(v.vulnId, v); });
+  const jobs=[]; const per={};
+  S.cks.filter(c=>dstIds.includes(c.id)).forEach(dst=>{
+    const st = per[dst.id] = {copy:0, skipDone:0, noMatch:0, baseNR:0};
+    dst.vulns.forEach(v=>{
+      const b = byId.get(v.vulnId);
+      if(!b){ st.noMatch++; return; }
+      if(b.status==='Not_Reviewed' && !b.comments.trim()){ st.baseNR++; return; }
+      if(which==='nr' && v.status!=='Not_Reviewed'){ st.skipDone++; return; }
+      if(which==='empty' && v.comments.trim()){ st.skipDone++; return; }
+      jobs.push({b, v}); st.copy++;
+    });
+  });
+  return {src, jobs, per, o};
+}
+function swapHost(text, from, to){ return (from && to && from!==to) ? text.split(from).join(to) : text; }
+function renderBasePreview(){
+  const {src, jobs, per, o} = basePlan();
+  if(!src){ $('bPreview').textContent=''; return; }
+  const lines = Object.entries(per).map(([id,st])=>{
+    const c=S.cks.find(x=>x.id===id);
+    return `<b>${esc(ckName(c))}</b>: ${st.copy} rule(s) to copy` +
+      (st.skipDone?` · ${st.skipDone} skipped (already done)`:'') +
+      (st.noMatch?` · ${st.noMatch} not in the baseline`:'');
+  });
+  if(!lines.length){ $('bPreview').innerHTML='Tick at least one checklist to copy to.'; $('bGo').disabled=true; return; }
+  const nothing = !o.status && !o.comments && !o.details;
+  $('bPreview').innerHTML = lines.join('<br>') + (nothing?'<br><span class="warn">Pick something to copy.</span>':'');
+  $('bGo').disabled = !jobs.length || nothing;
+  $('bGo').textContent = jobs.length ? `Copy ${jobs.length} rule(s)` : 'Nothing to copy';
+}
+$('btnBaseline').addEventListener('click', ()=>{
+  const real = S.cks.filter(c=>c.type!=='manual');
+  // guess the baseline: the checklist with the most rules reviewed
+  const reviewed = c => c.vulns.filter(v=>v.status!=='Not_Reviewed').length;
+  const guess = real.find(c=>c.id===S.lastBase)
+    || real.find(c=>/base/i.test(c.fileName+' '+c.host))
+    || real.slice().sort((a,b)=>reviewed(b)-reviewed(a))[0];
+  $('bSrc').innerHTML = real.map(c=>`<option value="${esc(c.id)}" ${c===guess?'selected':''}>${esc(ckName(c))} · ${esc(c.fileName)} (${reviewed(c)} of ${c.vulns.length} reviewed)</option>`).join('');
+  const fillDst = ()=>{
+    const sid=$('bSrc').value;
+    $('bDst').innerHTML = real.filter(c=>c.id!==sid).map(c=>`<label class="muted"><input type="checkbox" value="${esc(c.id)}" checked style="width:auto"> ${esc(ckName(c))} · ${esc(c.fileName)}</label>`).join('');
+    renderBasePreview();
+  };
+  $('bSrc').onchange = fillDst; fillDst();
+  $('dlgBase').showModal();
+});
+$('dlgBase').addEventListener('change', e=>{ if(e.target.id!=='bSrc') renderBasePreview(); });
+$('bCancel').addEventListener('click', ()=>$('dlgBase').close());
+$('bGo').addEventListener('click', async ()=>{
+  const {src, jobs, o} = basePlan(); if(!jobs.length) return;
+  S.lastBase = src.id;
+  const touched = new Set();
+  jobs.forEach(({b, v})=>{
+    const to = v.ck.host, from = src.host;
+    const comment = o.comments ? (o.host ? swapHost(b.comments, from, to) : b.comments) : v.comments;
+    const details = o.details ? (o.host ? swapHost(b.details, from, to) : b.details) : null;
+    writeBack(v, o.status ? b.status : v.status, comment, details);
+    touched.add(v.ck);
+  });
+  // forget unfinished edits on these rules so the screen shows what was copied
+  const drafts = store.get('scw.drafts', {});
+  new Set(jobs.map(j=>j.v.vulnId)).forEach(k=>{ delete S.work[k]; delete drafts[k]; });
+  store.set('scw.drafts', drafts);
+  $('dlgBase').close();
+  rebuildRules(); renderList(); renderDetail();
+  toast(`Copied ${jobs.length} rule(s) to ${touched.size} checklist(s)`);
+  await autoSave([...touched]);
+});
+
 /* ---------------- Manual rule ---------------- */
 $('btnManual').addEventListener('click', ()=>$('dlgManual').showModal());
 $('mCancel').addEventListener('click', ()=>$('dlgManual').close());
@@ -1037,6 +1140,7 @@ $('tplSave').addEventListener('click', ()=>{
   $('dlgTemplates').close(); if(curGroup()) renderDetail(); toast(`${t.length} templates saved`);
 });
 
+$('appVer').textContent = 'v'+APP_VERSION;
 if(!S.profile.name) setTimeout(()=>toast('Tip: set My info first so names fill in'), 600);
 </script>
 </body>

@@ -6,6 +6,16 @@ Versions stay in the 1.3 series: each release bumps the last number (1.3.2, 1.3.
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-11-23
+### Fixed
+- Evidence now follows the selected system. Each system keeps its own pasted output and evaluation result, and switching systems loads that system's output (or its existing Finding Details) instead of keeping the first system's.
+### Added
+- Host names in "Checklists with this rule" are clickable to switch systems, with an Evaluated column showing each system's result.
+- Apply warns when a ticked system's evaluation disagrees with the status being applied.
+### Changed
+- Finding Details default is now "Each system gets the output pasted for it". Systems with nothing pasted keep their existing Finding Details.
+- Unfinished work saves each system's output separately.
+
 ## [1.3.2] - 2026-11-20
 ### Added
 - **Open folder**: pick an Evaluate-STIG output folder and the app finds every .ckl/.cklb under it, for every server.
@@ -63,7 +73,8 @@ Versions stay in the 1.3 series: each release bumps the last number (1.3.2, 1.3.
 - Template editor with .txt import.
 - Apply sets status, comment and Finding Details; Save checklist exports the updated file.
 
-[Unreleased]: ../../compare/v1.3.2...HEAD
+[Unreleased]: ../../compare/v1.3.3...HEAD
+[1.3.3]: ../../compare/v1.3.2...v1.3.3
 [1.3.2]: ../../compare/v1.3.1...v1.3.2
 [1.3.1]: ../../compare/v1.3.0...v1.3.1
 [1.3.0]: ../../compare/v1.2.0...v1.3.0

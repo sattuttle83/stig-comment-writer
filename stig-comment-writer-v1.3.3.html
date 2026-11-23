@@ -98,6 +98,8 @@ dialog.wide{width:min(1100px,96vw)}
 .srv:first-child .srow.sv{border-top:0}
 .srow.fl{padding-left:30px}
 .tgtname{color:var(--accent);font-size:12px}
+a.pickSys{color:var(--ink);text-decoration:none;border-bottom:1px dashed var(--muted)}
+a.pickSys:hover,a.pickSys.cur{color:var(--accent);border-color:var(--accent)}
 dialog::backdrop{background:rgba(0,0,0,.4)}
 dialog h2{margin:0 0 12px;font-size:16px}
 dialog .g{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -249,7 +251,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
 
 <script>
 "use strict";
-const APP_VERSION = '1.3.2';   // keep in step with CHANGELOG.md and the file name
+const APP_VERSION = '1.3.3';   // keep in step with CHANGELOG.md and the file name
 /* ---------------- Default templates (user's file + one added) ---------------- */
 const DEFAULT_TEMPLATES = `Open finding (remediation deferred)
 
@@ -733,8 +735,12 @@ function scheduleDraft(){
     const all = store.get('scw.drafts', {});
     for(const [k,w] of Object.entries(S.work)){
       const evCk = S.cks.find(c=>c.id===w.evHost);
-      all[k] = {tpl:w.tpl, vals:w.vals, evidence:w.evidence, evalRes:w.evalRes, outManual:w.outManual, outText:w.outText,
-                detailsMode:w.detailsMode, evHostName: evCk ? evCk.host : (w.evHostName||'')};
+      const pathOf = id => (S.cks.find(c=>c.id===id)||{}).path;
+      const evByPath={}, evalByPath={};
+      for(const [id,t] of Object.entries(w.evBy||{})){ const p=pathOf(id); if(p) evByPath[p]=t; }
+      for(const [id,r] of Object.entries(w.evalBy||{})){ const p=pathOf(id); if(p) evalByPath[p]=r; }
+      all[k] = {tpl:w.tpl, vals:w.vals, outManual:w.outManual, outText:w.outText, detailsMode:w.detailsMode,
+                evByPath, evalByPath, evHostPath: evCk ? evCk.path : (w.evHostPath||'')};
     }
     store.set('scw.drafts', all);
   }, 600);
@@ -742,9 +748,18 @@ function scheduleDraft(){
 function restoreDraft(g){
   const d = store.get('scw.drafts', {})[g.key];
   if(!d || !(d.tpl < S.templates.length)) return null;
-  const w = Object.assign(newWork(g), d);
-  const ck = g.items.map(v=>v.ck).find(c=>c.host && c.host===d.evHostName);
+  const w = newWork(g);
+  Object.assign(w, {tpl:d.tpl, vals:d.vals||{}, outManual:!!d.outManual, outText:d.outText||'',
+                    detailsMode: d.detailsMode==='all'||d.detailsMode==='none' ? d.detailsMode : 'own'});
+  g.items.forEach(v=>{
+    if(d.evByPath && v.ck.path in d.evByPath) w.evBy[v.ck.id]=d.evByPath[v.ck.path];
+    if(d.evalByPath && v.ck.path in d.evalByPath) w.evalBy[v.ck.id]=d.evalByPath[v.ck.path];
+  });
+  const ck = g.items.map(v=>v.ck).find(c=>c.path===d.evHostPath)
+          || g.items.map(v=>v.ck).find(c=>c.host && c.host===d.evHostName);   // older drafts
   if(ck) w.evHost = ck.id;
+  if(d.evidence && !d.evByPath) w.evBy[w.evHost] = d.evidence;                 // older drafts
+  loadSystem(g, w);
   return w;
 }
 
@@ -768,8 +783,19 @@ function groupStatus(g){
 
 /* ---------------- Rendering ---------------- */
 function newWork(g){
-  return {tpl:0, vals:{}, evidence:'', evalRes:null, outManual:false, outText:'', detailsMode:'evhost',
-          evHost: g.items[0].ck.id, targets: g.items.map(v=>v.ck.id)};
+  return {tpl:0, vals:{}, evidence:'', evalRes:null, outManual:false, outText:'', detailsMode:'own',
+          evHost: g.items[0].ck.id, targets: g.items.map(v=>v.ck.id),
+          evBy:{}, evalBy:{}};   // pasted output and evaluation, kept separately for each system (checklist id)
+}
+// What's in the evidence box for a system: what you pasted for it, or else its current Finding Details
+function evFor(g, w, ckId){
+  if(ckId in w.evBy) return w.evBy[ckId];
+  const v=g.items.find(x=>x.ck.id===ckId); return v ? (v.details||'') : '';
+}
+// Point the evidence box and result at the selected system
+function loadSystem(g, w){
+  w.evidence = evFor(g, w, w.evHost);
+  w.evalRes = w.evalBy[w.evHost] || null;
 }
 function getWork(g){
   let w=S.work[g.key];
@@ -779,15 +805,15 @@ function getWork(g){
       w = newWork(g);
       const st = groupStatus(g);
       w.tpl = tplForStatus(st==='Not_Reviewed'||st==='Mixed' ? 'Open' : st);
-      w.evidence = (g.items.find(v=>v.details) || {}).details || '';
       const first = g.items.find(v=>v.details); if(first) w.evHost = first.ck.id;
+      loadSystem(g, w);
       applyAuto(g, w, true);
     }
     S.work[g.key]=w;
   }
   // targets: any checklist with this rule that isn't tracked yet starts ticked
   g.items.forEach(v=>{ if(!w.targets.includes(v.ck.id) && !(w.untargeted||[]).includes(v.ck.id)) w.targets.push(v.ck.id); });
-  if(!g.items.some(v=>v.ck.id===w.evHost)) w.evHost = g.items[0].ck.id;
+  if(!g.items.some(v=>v.ck.id===w.evHost)){ w.evHost = g.items[0].ck.id; loadSystem(g, w); }
   return w;
 }
 function primaryHost(g, w){
@@ -875,11 +901,12 @@ function renderDetail(){
   <div class="card">
     <h3>Checklists with this rule <span class="sp"></span>
       ${multi?`<button id="tAll">All</button><button id="tNone">None</button>`:''}</h3>
-    <table class="targets"><tr><th style="width:34px">Apply</th><th>Host</th><th>Status</th><th>Current comment</th><th></th></tr>
+    <table class="targets"><tr><th style="width:34px">Apply</th><th>Host</th><th>Status</th><th>Evaluated</th><th>Current comment</th><th></th></tr>
     ${g.items.map(v=>{ const on=w.targets.includes(v.ck.id); return `<tr>
       <td><input type="checkbox" class="tgt" data-ck="${esc(v.ck.id)}" ${on?'checked':''} style="width:auto"></td>
-      <td><b>${esc(ckName(v.ck))}</b><div class="muted">${esc((v.ck.stigs||[]).join(', ') || v.ck.fileName)}</div></td>
+      <td><a href="#" class="pickSys ${v.ck.id===w.evHost?'cur':''}" data-ck="${esc(v.ck.id)}" title="Show this system's output and result"><b>${esc(ckName(v.ck))}</b></a>${v.ck.id===w.evHost&&multi?' <span class="muted">◀ showing</span>':''}<div class="muted">${esc((v.ck.stigs||[]).join(', ') || v.ck.fileName)}</div></td>
       <td><span class="pill s-${v.status}">${STATUS_LABEL[v.status]}</span>${v.edited?' <span class="edited">●</span>':''}</td>
+      <td>${(()=>{ const er=w.evalBy[v.ck.id]; return er ? (er.suggest?`<span class="pill s-${er.suggest}">${STATUS_LABEL[er.suggest]}</span>`:'<span class="muted">Manual</span>') : ((w.evBy[v.ck.id]||'').trim()?'<span class="muted">Pasted</span>':'<span class="muted">—</span>'); })()}</td>
       <td>${v.comments?`<details class="cmt"><summary>${esc(v.comments.split('\n')[0].slice(0,90))}</summary><pre>${esc(v.comments)}</pre></details>`:'<span class="muted">None</span>'}</td>
       <td>${v.comments?`<button class="useCmt" data-ck="${esc(v.ck.id)}" title="Put this comment in the comment box so you can change it">Edit this one</button>`:''}</td>
     </tr>`;}).join('')}</table>
@@ -888,14 +915,14 @@ function renderDetail(){
 
   <div class="card">
     <h3>1. Evidence <span class="sp"></span><span class="muted">Paste PowerShell, reg query, gpresult, auditpol or script output</span></h3>
-    ${multi?`<div class="row" style="margin:0 0 8px"><label class="muted" style="white-space:nowrap">This output is from</label>
-      <select id="evHost" style="width:auto">${g.items.map(v=>`<option value="${esc(v.ck.id)}" ${v.ck.id===w.evHost?'selected':''}>${esc(ckName(v.ck))}</option>`).join('')}</select></div>`:''}
+    ${multi?`<div class="row" style="margin:0 0 8px"><label class="muted" style="white-space:nowrap">Output for system</label>
+      <select id="evHost" style="width:auto" title="Each system keeps its own output and result">${g.items.map(v=>`<option value="${esc(v.ck.id)}" ${v.ck.id===w.evHost?'selected':''}>${esc(ckName(v.ck))}</option>`).join('')}</select></div>`:''}
     <textarea id="ev" class="ev" placeholder="Paste command output here…">${esc(w.evidence)}</textarea>
     <div class="row"><button class="primary" id="btnEval">Evaluate</button>
       <label class="muted">Finding Details:</label>
       <select id="detailsMode" style="width:auto">
-        <option value="evhost" ${w.detailsMode==='evhost'?'selected':''}>${multi?'Put this output on '+esc(ckName((S.cks.find(c=>c.id===w.evHost)||g.items[0].ck)))+' only':'Put this output in Finding Details'}</option>
-        ${multi?`<option value="all" ${w.detailsMode==='all'?'selected':''}>Put this output on every ticked checklist</option>`:''}
+        <option value="own" ${w.detailsMode!=='all'&&w.detailsMode!=='none'?'selected':''}>${multi?'Each system gets the output pasted for it':'Put this output in Finding Details'}</option>
+        ${multi?`<option value="all" ${w.detailsMode==='all'?'selected':''}>Put this system's output on every ticked checklist</option>`:''}
         <option value="none" ${w.detailsMode==='none'?'selected':''}>Leave Finding Details alone</option>
       </select>
       <span class="muted" style="margin-left:auto"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> evaluates</span></div>
@@ -953,19 +980,26 @@ function renderDetail(){
   if(multi){
     $('tAll').addEventListener('click', ()=>{ w.targets=g.items.map(v=>v.ck.id); w.untargeted=[]; rerender(); });
     $('tNone').addEventListener('click', ()=>{ w.targets=[]; w.untargeted=g.items.map(v=>v.ck.id); rerender(); });
-    $('evHost').addEventListener('change', e=>{ w.evHost=e.target.value; applyAuto(g, w, false); w.outManual=false; rerender(); });
+    $('evHost').addEventListener('change', e=>{ switchSystem(e.target.value); });
   }
+  function switchSystem(id){
+    w.evHost=id; loadSystem(g, w);
+    if(w.evalRes && w.evalRes.suggest) w.tpl = tplForStatus(w.evalRes.suggest);
+    applyAuto(g, w, false); w.outManual=false; rerender();
+  }
+  D.querySelectorAll('.pickSys').forEach(a=>a.addEventListener('click', e=>{ e.preventDefault(); switchSystem(a.dataset.ck); }));
   D.querySelectorAll('.useCmt').forEach(b=>b.addEventListener('click', e=>{
     const v=g.items.find(x=>x.ck.id===e.target.dataset.ck);
-    w.outManual=true; w.outText=v.comments; w.evHost=v.ck.id;
+    w.outManual=true; w.outText=v.comments; w.evHost=v.ck.id; loadSystem(g, w);
     if(v.status!=='Not_Reviewed'){ const i=S.templates.findIndex(t=>t.status===v.status); if(i>=0 && S.templates[w.tpl].status!==v.status) w.tpl=tplForStatus(v.status); }
     rerender(); toast(`Loaded the comment from ${ckName(v.ck)}. Change it, then Apply.`);
   }));
-  $('ev').addEventListener('input', e=>{ w.evidence=e.target.value; });
+  $('ev').addEventListener('input', e=>{ w.evidence=e.target.value; w.evBy[w.evHost]=e.target.value; });
   $('ev').addEventListener('keydown', e=>{ if(e.key==='Enter' && (e.ctrlKey||e.metaKey)){ e.preventDefault(); $('btnEval').click(); }});
   $('detailsMode').addEventListener('change', e=>{ w.detailsMode=e.target.value; });
   $('btnEval').addEventListener('click', ()=>{
     w.evalRes = evaluate(g, w.evidence);
+    w.evBy[w.evHost] = w.evidence; w.evalBy[w.evHost] = w.evalRes;
     if(w.evalRes.suggest) w.tpl = tplForStatus(w.evalRes.suggest);
     applyAuto(g, w, false); w.outManual=false; rerender();
   });
@@ -983,11 +1017,14 @@ function renderDetail(){
     if(!targets.length) return;
     const text=$('out').value; const left=(text.match(/\[[^\]]+\]/g)||[]).length;
     if(left && !confirm(`${left} field(s) are still in [brackets]. Apply anyway?`)) return;
+    const disagree = targets.filter(v=>{ const er=w.evalBy[v.ck.id]; return er && er.suggest && er.suggest!==tpl.status; });
+    if(disagree.length && !confirm(`${disagree.map(v=>`${ckName(v.ck)} evaluated as ${STATUS_LABEL[w.evalBy[v.ck.id].suggest]}`).join('\n')}\n\nYou're applying ${STATUS_LABEL[tpl.status]} to every ticked checklist. Click Cancel to untick those systems first, or OK to apply anyway.`)) return;
     const overwrite = targets.filter(v=>v.comments && v.comments.trim() && v.comments.trim()!==commentFor(g,w,tpl,v.ck).trim());
     if(overwrite.length>1 && !confirm(`This replaces the existing comment on ${overwrite.length} checklists (${overwrite.map(v=>ckName(v.ck)).join(', ')}). Go ahead?`)) return;
     const ev = w.evidence.trim() ? w.evidence : null;
+    const own = id => (w.evBy[id]||'').trim() ? w.evBy[id] : null;   // only output you pasted for that system
     targets.forEach(v=>{
-      const details = w.detailsMode==='all' ? ev : (w.detailsMode==='evhost' && v.ck.id===w.evHost) ? ev : null;
+      const details = w.detailsMode==='all' ? ev : w.detailsMode==='none' ? null : own(v.ck.id);
       writeBack(v, tpl.status, commentFor(g, w, tpl, v.ck), details);
     });
     toast(`${g.vulnId} set to ${STATUS_LABEL[tpl.status]} on ${targets.length} checklist(s)`);

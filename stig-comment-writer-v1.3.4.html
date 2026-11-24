@@ -98,6 +98,9 @@ dialog.wide{width:min(1100px,96vw)}
 .srv:first-child .srow.sv{border-top:0}
 .srow.fl{padding-left:30px}
 .tgtname{color:var(--accent);font-size:12px}
+.ruleref{display:grid;gap:10px;padding:10px 12px;margin-bottom:12px;background:var(--bg);border:1px solid var(--line);border-radius:6px}
+.refbox{white-space:pre-wrap;font-size:13px;line-height:1.45;max-height:220px;overflow:auto}
+.refbox.disc{max-height:150px}
 a.pickSys{color:var(--ink);text-decoration:none;border-bottom:1px dashed var(--muted)}
 a.pickSys:hover,a.pickSys.cur{color:var(--accent);border-color:var(--accent)}
 dialog::backdrop{background:rgba(0,0,0,.4)}
@@ -177,7 +180,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
 
 <dialog id="dlgTemplates">
   <h2>Comment templates</h2>
-  <p class="muted" style="margin-top:0">Same format as your template file: a title line, a blank line, then the template lines. Put a blank line between templates. Anything in [brackets] becomes a fill-in field. The Status line decides the checklist status (Open, Not a Finding, Not Applicable).</p>
+  <p class="muted" style="margin-top:0">Same format as your template file: a title line, a blank line, then the template lines. Put a blank line between templates. Anything in [brackets] becomes a fill-in field. [Rule Title], [Discussion], [Vuln ID] and [Rule Version] fill in from the rule. The Status line decides the checklist status (Open, Not a Finding, Not Applicable).</p>
   <textarea id="tplText" style="height:52vh;font-family:var(--mono);font-size:12.5px"></textarea>
   <div class="dlgbtns">
     <label class="btn" style="margin-right:auto">Import .txt<input type="file" id="tplFile" accept=".txt" hidden></label>
@@ -251,7 +254,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
 
 <script>
 "use strict";
-const APP_VERSION = '1.3.3';   // keep in step with CHANGELOG.md and the file name
+const APP_VERSION = '1.3.4';   // keep in step with CHANGELOG.md and the file name
 /* ---------------- Default templates (user's file + one added) ---------------- */
 const DEFAULT_TEMPLATES = `Open finding (remediation deferred)
 
@@ -428,7 +431,7 @@ function parseCkl(text, fileName){
       const kid = el => (v.querySelector(':scope > '+el)||{}).textContent || '';
       vulns.push({
         key:`${si}|${a.Vuln_Num}|${a.Rule_ID}`, vulnId:a.Vuln_Num||'', ruleId:a.Rule_ID||'', ruleVer:a.Rule_Ver||'',
-        title:a.Rule_Title||'', severity:(a.Severity||'').toLowerCase(), check:a.Check_Content||'', fix:a.Fix_Text||'',
+        title:a.Rule_Title||'', discussion:a.Vuln_Discuss||'', severity:(a.Severity||'').toLowerCase(), check:a.Check_Content||'', fix:a.Fix_Text||'',
         status:normStatus(kid('STATUS')), comments:kid('COMMENTS'), details:kid('FINDING_DETAILS'), stig, ref:v, edited:false
       });
     });
@@ -446,7 +449,7 @@ function parseCklb(text, fileName){
     (st.rules||[]).forEach(r=>{
       vulns.push({
         key:`${si}|${r.group_id}|${r.rule_id}`, vulnId:r.group_id||'', ruleId:r.rule_id_src||r.rule_id||'', ruleVer:r.rule_version||'',
-        title:r.rule_title||'', severity:(r.severity||'').toLowerCase(), check:r.check_content||'', fix:r.fix_text||'',
+        title:r.rule_title||'', discussion:r.discussion||r.vuln_discussion||'', severity:(r.severity||'').toLowerCase(), check:r.check_content||'', fix:r.fix_text||'',
         status:normStatus(r.status), comments:r.comments||'', details:r.finding_details||'',
         stig:st.display_name||st.stig_name||'', ref:r, edited:false
       });
@@ -684,6 +687,11 @@ function autoValue(f, tpl, v, w, hostArg){
   const r = w.evalRes || {};
   const hasEv = !!(w.evidence||'').trim();
   const nameRole = [P.name, P.role].filter(Boolean).join(', ');
+  // rule fields a template can pull in: [Rule Title], [Discussion], [Vuln ID], [Rule Version]
+  if(tok==='rule title') return v.title||'';
+  if(tok==='discussion') return (v.discussion||'').replace(/\s+/g,' ').trim();
+  if(tok==='vuln id') return v.vulnId||'';
+  if(tok==='rule version' || tok==='stig id') return v.ruleVer||'';
   if(tok==='date'){
     if(lab==='status' || lab==='last updated') return today;
     if(lab==='when' && /(implemented|validated|submitted)\s*$/.test(before)) return today;
@@ -769,7 +777,7 @@ function rebuildRules(){
   S.cks.forEach(ck=>ck.vulns.forEach(v=>{
     const k = v.vulnId || v.key;
     if(!map.has(k)) map.set(k, {key:k, vulnId:v.vulnId, ruleVer:v.ruleVer, ruleId:v.ruleId, title:v.title, severity:v.severity,
-                                check:v.check, fix:v.fix, stig:v.stig, items:[]});
+                                check:v.check, fix:v.fix, discussion:v.discussion||'', stig:v.stig, items:[]});
     map.get(k).items.push(v);
   }));
   S.rules=[...map.values()];
@@ -894,6 +902,7 @@ function renderDetail(){
       <span class="cat">${CAT[g.severity]||''}</span> ${statusPill(g)}
       ${g.stig?`<span>· ${esc(g.stig)}</span>`:''}</div>
     <div class="rtitle">${esc(g.title)}</div>
+    ${g.discussion?`<details><summary>Discussion</summary><pre>${esc(g.discussion)}</pre></details>`:''}
     <details ${r?'':'open'}><summary>Check text</summary><pre>${esc(g.check)}</pre></details>
     <details><summary>Fix text</summary><pre>${esc(g.fix)}</pre></details>
   </div>
@@ -942,12 +951,19 @@ function renderDetail(){
   <div class="grid2">
     <div class="card">
       <h3>${r?'3':'2'}. Fill in the template</h3>
+      <div class="ruleref">
+        <div class="fld"><label>Rule title <span class="ctx">— ${esc(g.vulnId)}${g.ruleVer?' · '+esc(g.ruleVer):''}</span></label>
+          <div class="refbox">${esc(g.title)||'<span class="muted">No title in checklist</span>'}</div></div>
+        <div class="fld"><label>Discussion</label>
+          ${g.discussion?`<div class="refbox disc">${esc(g.discussion)}</div>`
+                        :'<div class="refbox muted">No discussion in this checklist.</div>'}</div>
+      </div>
       <div class="fld"><label>Template</label>
         <select id="tplSel">${S.templates.map((t,i)=>`<option value="${i}" ${i===w.tpl?'selected':''}>${esc(t.name)} → ${STATUS_LABEL[t.status]}</option>`).join('')}</select></div>
       <p class="muted" style="margin:8px 0">Fields with a blue edge were filled in for you. Change anything. Blank fields stay as [brackets] in the comment so you can spot them.</p>
       <div class="fields">${fields.map(f=>{
         const val=(w.vals[f.key]||{}).v||''; const auto=(w.vals[f.key]||{}).auto && val;
-        const long = LONG_LABELS.test(f.label) || f.token.length>60;
+        const long = LONG_LABELS.test(f.label) || f.token.length>60 || /^(discussion|rule title)$/i.test(f.token);
         const ctx = f.before ? ` <span class="ctx">— after “${esc(f.before.slice(-40))}”</span>`
                   : (f.token.length<40 ? ` <span class="ctx">— ${esc(f.token)}</span>` : '');
         return `<div class="fld ${auto?'auto':''}"><label>${esc(f.label||'Field')}${ctx}</label>

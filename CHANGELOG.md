@@ -6,6 +6,12 @@ Versions stay in the 1.3 series: each release bumps the last number (1.3.2, 1.3.
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-11-24
+### Added
+- Rule title and Discussion shown at the top of "Fill in the template", so they're in view while writing the comment.
+- Discussion shown in the rule card above the check text (read from Vuln_Discuss in .ckl and discussion in .cklb).
+- Templates can use [Rule Title], [Discussion], [Vuln ID] and [Rule Version]; these fill in from the rule automatically.
+
 ## [1.3.3] - 2026-11-23
 ### Fixed
 - Evidence now follows the selected system. Each system keeps its own pasted output and evaluation result, and switching systems loads that system's output (or its existing Finding Details) instead of keeping the first system's.
@@ -73,7 +79,8 @@ Versions stay in the 1.3 series: each release bumps the last number (1.3.2, 1.3.
 - Template editor with .txt import.
 - Apply sets status, comment and Finding Details; Save checklist exports the updated file.
 
-[Unreleased]: ../../compare/v1.3.3...HEAD
+[Unreleased]: ../../compare/v1.3.4...HEAD
+[1.3.4]: ../../compare/v1.3.3...v1.3.4
 [1.3.3]: ../../compare/v1.3.2...v1.3.3
 [1.3.2]: ../../compare/v1.3.1...v1.3.2
 [1.3.1]: ../../compare/v1.3.0...v1.3.1

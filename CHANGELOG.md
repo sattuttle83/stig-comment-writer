@@ -6,6 +6,10 @@ Versions stay in the 1.3 series: each release bumps the last number (1.3.2, 1.3.
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-11-24
+### Changed
+- Rule title and Discussion now show only at the top of the page: the Discussion sits under the rule title in the same gray box as Check text and Fix text, open by default, and can be collapsed. The app remembers whether you left it open or closed. Removed the duplicate box from "Fill in the template".
+
 ## [1.3.4] - 2026-11-24
 ### Added
 - Rule title and Discussion shown at the top of "Fill in the template", so they're in view while writing the comment.
@@ -79,7 +83,8 @@ Versions stay in the 1.3 series: each release bumps the last number (1.3.2, 1.3.
 - Template editor with .txt import.
 - Apply sets status, comment and Finding Details; Save checklist exports the updated file.
 
-[Unreleased]: ../../compare/v1.3.4...HEAD
+[Unreleased]: ../../compare/v1.3.5...HEAD
+[1.3.5]: ../../compare/v1.3.4...v1.3.5
 [1.3.4]: ../../compare/v1.3.3...v1.3.4
 [1.3.3]: ../../compare/v1.3.2...v1.3.3
 [1.3.2]: ../../compare/v1.3.1...v1.3.2

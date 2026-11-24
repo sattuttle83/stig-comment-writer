@@ -98,7 +98,6 @@ dialog.wide{width:min(1100px,96vw)}
 .srv:first-child .srow.sv{border-top:0}
 .srow.fl{padding-left:30px}
 .tgtname{color:var(--accent);font-size:12px}
-.ruleref{display:grid;gap:10px;padding:10px 12px;margin-bottom:12px;background:var(--bg);border:1px solid var(--line);border-radius:6px}
 .refbox{white-space:pre-wrap;font-size:13px;line-height:1.45;max-height:220px;overflow:auto}
 .refbox.disc{max-height:150px}
 a.pickSys{color:var(--ink);text-decoration:none;border-bottom:1px dashed var(--muted)}
@@ -254,7 +253,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-r
 
 <script>
 "use strict";
-const APP_VERSION = '1.3.4';   // keep in step with CHANGELOG.md and the file name
+const APP_VERSION = '1.3.5';   // keep in step with CHANGELOG.md and the file name
 /* ---------------- Default templates (user's file + one added) ---------------- */
 const DEFAULT_TEMPLATES = `Open finding (remediation deferred)
 
@@ -902,7 +901,7 @@ function renderDetail(){
       <span class="cat">${CAT[g.severity]||''}</span> ${statusPill(g)}
       ${g.stig?`<span>· ${esc(g.stig)}</span>`:''}</div>
     <div class="rtitle">${esc(g.title)}</div>
-    ${g.discussion?`<details><summary>Discussion</summary><pre>${esc(g.discussion)}</pre></details>`:''}
+    ${g.discussion?`<details id="discBox" ${store.get('scw.discOpen', true)?'open':''}><summary>Discussion</summary><pre>${esc(g.discussion)}</pre></details>`:''}
     <details ${r?'':'open'}><summary>Check text</summary><pre>${esc(g.check)}</pre></details>
     <details><summary>Fix text</summary><pre>${esc(g.fix)}</pre></details>
   </div>
@@ -951,13 +950,6 @@ function renderDetail(){
   <div class="grid2">
     <div class="card">
       <h3>${r?'3':'2'}. Fill in the template</h3>
-      <div class="ruleref">
-        <div class="fld"><label>Rule title <span class="ctx">— ${esc(g.vulnId)}${g.ruleVer?' · '+esc(g.ruleVer):''}</span></label>
-          <div class="refbox">${esc(g.title)||'<span class="muted">No title in checklist</span>'}</div></div>
-        <div class="fld"><label>Discussion</label>
-          ${g.discussion?`<div class="refbox disc">${esc(g.discussion)}</div>`
-                        :'<div class="refbox muted">No discussion in this checklist.</div>'}</div>
-      </div>
       <div class="fld"><label>Template</label>
         <select id="tplSel">${S.templates.map((t,i)=>`<option value="${i}" ${i===w.tpl?'selected':''}>${esc(t.name)} → ${STATUS_LABEL[t.status]}</option>`).join('')}</select></div>
       <p class="muted" style="margin:8px 0">Fields with a blue edge were filled in for you. Change anything. Blank fields stay as [brackets] in the comment so you can spot them.</p>
@@ -987,6 +979,7 @@ function renderDetail(){
   updateOut();
 
   const rerender=()=>{ renderDetail(); scheduleDraft(); };
+  if($('discBox')) $('discBox').addEventListener('toggle', e=>store.set('scw.discOpen', e.target.open));
   D.querySelectorAll('.tgt').forEach(cb=>cb.addEventListener('change', e=>{
     const id=e.target.dataset.ck; w.untargeted = w.untargeted||[];
     if(e.target.checked){ if(!w.targets.includes(id)) w.targets.push(id); w.untargeted=w.untargeted.filter(x=>x!==id); }
